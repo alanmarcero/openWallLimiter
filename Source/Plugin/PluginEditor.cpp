@@ -369,5 +369,5 @@ void WallEditor::paint(juce::Graphics &g) {
          juce::String(wallProcessor.effectiveFactor.load()) + "x active  |  " +
              juce::String(wallProcessor.getLatencySamples()) + " samples latency",
          {24, 733, 500, 18}, 11, muted);
-    text(g, "Alan Marcero   /   v1.0.0", {792, 733, 300, 18}, 11, muted, juce::Justification::centredRight);
+    text(g, "Alan Marcero   /   v" JucePlugin_VersionString, {792, 733, 300, 18}, 11, muted, juce::Justification::centredRight);
 }
