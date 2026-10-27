@@ -140,3 +140,11 @@ This core does not provide resampling, true peak detection, dither, loudness
 measurement, bypass compensation, delta routing, or plugin state serialization.
 Listening comparisons and a broader independent mastering evaluation remain useful
 before using a new limiter on release masters.
+
+## Plugin integration
+
+The wrapper adds the openMaster high/low-pass stage **before** oversampling and detection. JUCE FIR half-band stages provide 1/2/4/8/16x processing; true-peak mode enforces at least 4x. Each quality path is padded to one fixed delay. A cold quality path warms before a 20 ms crossfade.
+
+After downsampling, `TruePeakGuard` estimates four fractional phases with a normalized 32-tap windowed-sinc detector. It holds required linked gain over 96 samples, adds 50 ms recovery, smooths gain over 32 samples, and applies it to audio delayed by 64 samples. A 0.1 dB reserve covers small detector/reconstruction differences. The independent host test uses a 16-phase, 64-tap reconstruction. The finite detector is an estimate; no universal reconstruction-filter guarantee is claimed.
+
+The reused K-weighted meter follows BS.1770-style absolute/relative gates with exact energy sums and a 0.001 LU histogram for the integrated gate. See the [ITU BS.1770 recommendation](https://www.itu.int/rec/R-REC-BS.1770/en). Short-term averaging uses 3 seconds. LRA is not implemented. TPDF dither is unshaped, independently generated per sample/channel, and quantizes to 16 or 24 bits.

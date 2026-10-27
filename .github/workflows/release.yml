@@ -1,0 +1,44 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing tag to build and publish (for example, v1.0.0)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      source_ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release publishing
+        run: python3 -m unittest discover -s scripts -p test_publish_release.py -v
+      - name: Check out release source and notes
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+          path: release-source
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: openWallLimiter-*
+          merge-multiple: true
+          path: dist
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.zip > SHA256SUMS.txt
+      - name: Publish validated packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: python3 scripts/publish_release.py
