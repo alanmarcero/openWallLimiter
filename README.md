@@ -4,7 +4,7 @@ A mastering limiter with five characters and a wall that holds. Selectable high/
 
 ![openWallLimiter](docs/screenshots/openWallLimiter.png)
 
-[Download VST3 / AU](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager)
+[Download VST3 / AU](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
 ## Shape the final mix
 
@@ -33,13 +33,15 @@ The meter panel includes short-term and gated integrated LUFS, maximum estimated
 - **macOS 11+**, Apple Silicon and Intel: universal VST3 and Audio Unit.
 - **Windows 10+ x64**: VST3.
 
-Use OpenVST Manager, or extract the release ZIP and copy `openWallLimiter.vst3` into your DAW's VST3 folder. On macOS the user folders are `~/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/Components`. Close the DAW before replacing bundles and rescan after installation. Windows' standard VST3 folder is `C:\Program Files\Common Files\VST3`.
+Download and open [OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest), refresh the catalog, select **openWallLimiter**, and install VST3 or AU (macOS only). Rescan plugins in your DAW after installation.
+
+For manual installation, extract the release ZIP and copy `openWallLimiter.vst3` into your DAW's VST3 folder. On macOS the user folders are `~/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/Components`. Close the DAW before replacing bundles and rescan after installation. Windows' standard VST3 folder is `C:\Program Files\Common Files\VST3`.
 
 macOS bundles are ad-hoc signed, not notarized. Verify downloaded files with `SHA256SUMS.txt`; macOS may require allowing the plugin in Privacy & Security. The manager handles installation to writable plugin folders.
 
 ## Processing notes
 
-This is an independent implementation inspired by the public Waves L4 workflow, with original DSP and artwork. It is not a sound-identical L4/L2 clone. The algorithms and source research are documented in [ALGORITHMS.md](docs/ALGORITHMS.md).
+openWallLimiter uses original DSP and artwork. The algorithms and source research are documented in [ALGORITHMS.md](docs/ALGORITHMS.md).
 
 The signal path is:
 
@@ -47,11 +49,11 @@ The signal path is:
 
 The limiter uses 5 ms lookahead. All oversampling paths are padded to one fixed reported latency, with another 128 samples for the final guard. Oversampling changes warm the new path and crossfade for 20 ms. CPU use rises temporarily during that transition. Buffers are allocated in preparation, outside the audio callback.
 
-True-peak protection uses a eight-phase, 96-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.3 dB reconstruction reserve. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
+True-peak protection uses an eight-phase, 96-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.3 dB reconstruction reserve. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
 
 Gain match removes threshold makeup gain. Delta plays processed output minus the latency-aligned original; bypass plays that original. These audition paths can exceed the limiter ceiling. The dry reference includes the complete plugin latency and is taken before the filters. Floating-point processing is single precision with double-precision envelope/filter calculations. Supported host rates are 8–192 kHz, mono or stereo.
 
-Dither is optional unshaped TPDF with 16- or 24-bit quantization. Leave it off when another tool handles final bit-depth conversion. This release has no LRA readout, noise shaping or proprietary Waves algorithms.
+Dither is optional unshaped TPDF with 16- or 24-bit quantization. Leave it off when another tool handles final bit-depth conversion. This release has no LRA readout or noise shaping.
 
 ## Build and validate
 
