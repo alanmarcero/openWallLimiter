@@ -160,7 +160,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     toggle("delta", "Delta");
     toggle("bypass", "Bypass");
     buttons["true_peak"]->setTooltip("Uses at least 4x processing and a final reconstructed-peak lookahead "
-                                     "guard and 0.1 dB headroom. Meter is a 4x true-peak estimate.");
+                                     "guard and 0.3 dB headroom. Meter is a 4x true-peak estimate.");
     buttons["delta"]->setTooltip("Listen to processed output minus the latency-aligned original. This "
                                  "monitoring signal can exceed the output ceiling.");
     buttons["gain_match"]->setTooltip("Remove threshold makeup gain for level-matched comparison.");

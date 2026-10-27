@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include <iostream>
 #include <numbers>
+#include <random>
 #include <stdexcept>
 #include <vector>
 namespace checks {
@@ -118,6 +119,20 @@ inline void routing() {
         require(rmsTail(render(lp, tone(12000, 48000, 20000, .1f))) < .004,
                 "low-pass slope does not reject treble");
     }
+    for (bool highpass : {true, false}) {
+        WallProcessor p;
+        neutral(p);
+        const char *on = highpass ? "highpass_on" : "lowpass_on";
+        const char *hz = highpass ? "highpass_hz" : "lowpass_hz";
+        const auto signal = tone(24000, 48000, highpass ? 40 : 18000, .1f);
+        p.prepareToPlay(48000, 256);
+        render(p, signal);
+        set(p, hz, highpass ? 200 : 8000);
+        render(p, signal);
+        set(p, on, 1);
+        require(rmsTail(render(p, signal)) < .001,
+                "frequency changed while bypassed is not applied on enable");
+    }
     // A strong DC offset is removed before the limiter detector can duck the small wanted tone.
     WallProcessor filtered;
     neutral(filtered);
@@ -160,7 +175,8 @@ inline void quality() {
             set(p, "clip", 100);
             set(p, "true_peak", 1);
             p.prepareToPlay(rate, 256);
-            for (double hz : {997., rate * .25, rate * .40625}) {
+            for (double hz : {997., rate * .25, rate * .285, rate * .29, rate * .295, rate * .38,
+                              rate * .40625, rate * .48}) {
                 auto y = render(p, tone(8192, rate, hz, 1.4f));
                 float peak = reconstructedPeak(y);
                 std::cout << "true-peak mode=" << mode << " hz=" << hz << " dBTP=" << 20 * std::log10(peak)
@@ -169,6 +185,50 @@ inline void quality() {
                         "reconstructed output exceeds true-peak ceiling");
             }
         }
+    for (int pattern = 0; pattern < 8; ++pattern) {
+        WallProcessor p;
+        neutral(p);
+        set(p, "true_peak", 1);
+        set(p, "ceiling", -1);
+        set(p, "threshold", -12);
+        set(p, "clip", 100);
+        set(p, "mode", 2);
+        p.prepareToPlay(48000, 256);
+        std::vector<float> signal(16384);
+        std::mt19937 random(103);
+        std::uniform_real_distribution<float> noise(-1.4f, 1.4f);
+        for (size_t i = 0; i < signal.size(); ++i) {
+            const double phase = 2 * std::numbers::pi * double(i);
+            switch (pattern) {
+            case 0:
+                signal[i] = noise(random);
+                break;
+            case 1:
+                signal[i] = i % 2 ? 1.4f : -1.4f;
+                break;
+            case 2:
+                signal[i] = i % 65 == 0 ? 10.f : 0.f;
+                break;
+            case 3:
+                signal[i] = i % 300 < 100 ? float(1.4 * std::sin(phase * .48 + .73)) : 0.f;
+                break;
+            case 4:
+                signal[i] = float(.7 * (std::sin(phase * .23) + std::sin(phase * .47 + .73)));
+                break;
+            case 5:
+                signal[i] = i % 500 < 200 ? float(1.4 * std::sin(phase * .38 + .73)) : 0.f;
+                break;
+            case 6:
+                signal[i] = float(1.4 * std::sin(phase * (.01 + .48 * double(i) / double(signal.size()))));
+                break;
+            case 7:
+                signal[i] = i % 300 < 100 ? float(1.4 * std::sin(phase * .29 + .73)) : 0.f;
+                break;
+            }
+        }
+        require(reconstructedPeak(render(p, signal)) <= std::pow(10.f, -.05f) * 1.001f,
+                "transient/noise/chirp exceeds true-peak ceiling");
+    }
     std::cout << "PASS sample rates, oversized blocks, mono, quality switching, independent true-peak "
                  "reconstruction\n";
 }

@@ -117,7 +117,8 @@ void MultiPoleFilter::processBlock(float* const* channelData, int numChannels, i
 
     const float targetBypassGain = bypassed_ ? 0.0f : 1.0f;
     if (bypassed_ && currentBypassGain_ <= 1e-5f) {
-        currentCutoffHz_ = targetCutoffHz_;
+        if (std::abs(currentCutoffHz_ - targetCutoffHz_) > 1e-3)
+            updateCoefficients();
         hasProcessedAudio_ = true;
         return;
     }

@@ -49,6 +49,8 @@ jobs:
           curl --fail --location --silent --show-error -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
           unzip -q pluginval.zip
           ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate "$ARTEFACTS/VST3/openWallLimiter.vst3"
+      - name: Validate Audio Unit
+        run: python3 scripts/validate_au.py "$ARTEFACTS/AU/openWallLimiter.component"
       - name: Package
         run: |
           mkdir -p package/VST3 package/AU

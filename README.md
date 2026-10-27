@@ -45,9 +45,9 @@ The signal path is:
 
 `high pass → low pass → oversampling → threshold drive/upward → lookahead limiter/clip → downsampling → true-peak guard → dither → monitoring`
 
-The limiter uses 5 ms lookahead. All oversampling paths are padded to one fixed reported latency, with another 64 samples for the final guard. Oversampling changes warm the new path and crossfade for 20 ms. CPU use rises temporarily during that transition. Buffers are allocated in preparation, outside the audio callback.
+The limiter uses 5 ms lookahead. All oversampling paths are padded to one fixed reported latency, with another 128 samples for the final guard. Oversampling changes warm the new path and crossfade for 20 ms. CPU use rises temporarily during that transition. Buffers are allocated in preparation, outside the audio callback.
 
-True-peak protection uses a four-phase, 32-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.1 dB reconstruction reserve. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
+True-peak protection uses a eight-phase, 96-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.3 dB reconstruction reserve. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
 
 Gain match removes threshold makeup gain. Delta plays processed output minus the latency-aligned original; bypass plays that original. These audition paths can exceed the limiter ceiling. The dry reference includes the complete plugin latency and is taken before the filters. Floating-point processing is single precision with double-precision envelope/filter calculations. Supported host rates are 8–192 kHz, mono or stereo.
 
