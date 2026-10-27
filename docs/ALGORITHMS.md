@@ -148,3 +148,21 @@ The wrapper adds the openMaster high/low-pass stage **before** oversampling and 
 After downsampling, `TruePeakGuard` estimates eight fractional phases with a normalized 96-tap windowed-sinc detector. It holds required linked gain over 192 samples, adds 50 ms recovery, smooths gain over 64 samples, and applies it to audio delayed by 128 samples. A 0.3 dB reserve covers small detector/reconstruction differences. The independent host test uses a 16-phase, 64-tap reconstruction. The finite detector is an estimate; no universal reconstruction-filter guarantee is claimed.
 
 The reused K-weighted meter follows BS.1770-style absolute/relative gates with exact energy sums and a 0.001 LU histogram for the integrated gate. See the [ITU BS.1770 recommendation](https://www.itu.int/rec/R-REC-BS.1770/en). Short-term averaging uses 3 seconds. LRA is not implemented. TPDF dither is unshaped, independently generated per sample/channel, and quantizes to 16 or 24 bits.
+
+## Implementation-to-source map
+
+The mode names describe this project's tuning. They are not names of copied published algorithms. Each mode uses the same finite lookahead construction described above.
+
+| Implementation | Public basis and what is original here |
+| --- | --- |
+| Modern | [Luff's release-curve discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#release-curve) supplies the exponential-recovery building block. Interpolating its coefficient by attenuation depth and the 45/180 ms tuning are original choices here. |
+| Smooth | The same exponential building block, with an original parallel 35%/65% mixture at 120/280 ms. This is a parallel mixture, not Luff's illustrated series cascade. |
+| Aggressive / Safe | Exponential recovery with independently chosen 25/250 ms constants. The clip allocation and Safe's no-intentional-clipping policy are original. |
+| Classic | [Luff's alternative-release discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#alternative-release-curves) motivates exploring other recovery laws. This implementation multiplies linear gain by a fixed factor per sample, giving its original 60 dB/second recovery rule. It is not a published L2 emulation. |
+| Upward and clipping | Original gated amplitude-envelope lift and tanh shoulder, with the equations/ranges documented above. The [L4 guide](https://assets.wavescdn.com/pdf/plugins/l4-ultramaximizer.pdf) is a workflow reference, not the source of these transfer functions. |
+| True-peak reconstruction | Windowed-sinc FIR construction is explained by Steven W. Smith in [The Scientist and Engineer's Guide to DSP, Chapter 16](https://www.dspguide.com/CH16.PDF). The eight-phase/96-tap detector, gain scheduling and reserve are this project's design and are tested independently. |
+| Oversampling | [JUCE 8.0.9 Oversampling implementation](https://github.com/juce-framework/JUCE/blob/8.0.9/modules/juce_dsp/processors/juce_Oversampling.cpp), using its FIR half-band stages. |
+| High/low-pass stage | Reused MIT-licensed [openMaster Butterworth design](https://github.com/alanmarcero/openMaster/blob/8e0c6f00b17ceb37446da5c942ba1af9e22f36fc/Source/Core/ButterworthCoeffs.cpp) and multipole cascade. [Robert Bristow-Johnson's Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/) documents the underlying digital low/high-pass biquad forms. |
+| Loudness | [ITU-R BS.1770](https://www.itu.int/rec/R-REC-BS.1770/en), implemented by the reused openMaster meter. Its K-weighting coefficient fit follows the [libebur128 implementation](https://github.com/jiixyj/libebur128/blob/master/ebur128/ebur128.c); the integrated histogram and precision limits are described above. |
+
+The source files identify the implementations; numerical constants in the policies table are part of openWallLimiter's own tuning. Citing these references does not imply their authors endorse this plugin or that its behavior equals another product.
