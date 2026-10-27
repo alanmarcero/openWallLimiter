@@ -11,4 +11,4 @@ First release of openWallLimiter, a mastering limiter with a castle-themed nativ
 - Gain-match, delta audition, latency-aligned bypass, factory starting points and 16/24-bit TPDF dither.
 - macOS universal VST3/AU and Windows x64 VST3.
 
-This is an independent implementation inspired by the L4 workflow, not a sound-identical Waves clone. True-peak readout is a 4x estimate; this release does not implement LRA or Waves' proprietary dither/noise shaping. macOS bundles are ad-hoc signed, not notarized.
+True-peak readout is a 4x estimate. This release does not include an LRA readout or noise shaping. macOS bundles are ad-hoc signed, not notarized.
