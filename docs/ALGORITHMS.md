@@ -61,6 +61,12 @@ control. The exponential coefficient is `1 - exp(-1/(sampleRate*time))`.
 | Safe | Conservative 250 ms exponential recovery | 0 dB; Clip has no effect |
 | Classic | Gain returns at 60 dB/second, scaled inversely by Release | 3 dB |
 
+On a mode change, both release branches initialize from the previous mode's
+current effective release gain (the weighted fast/slow value when leaving Smooth).
+The lookahead and smoothing histories continue. Returning to Smooth therefore
+cannot revive attenuation left over from an earlier visit, and changing policies
+during a release preserves the active attenuation.
+
 Clipping allowance increases continuously with Clip. A symmetric tanh shoulder
 starts at `ceiling * (1 - .12*Clip)` and asymptotically approaches the ceiling.
 The shoulder runs only when Clip is positive, and never runs in Safe mode. Clip
@@ -125,7 +131,9 @@ protection through 3.072 MHz, low ceilings with reconstruction margin, determini
 block partitioning, reset, independent/linked stereo, silence and upward gating,
 malformed inputs/settings, distinct modes, release scaling, smooth anticipation,
 threshold automation smoothing across sample rates, and 2,000 automation blocks
-with allocation tracking. Run it with the CMake test
+with allocation tracking. Mode-transition regressions also cover returning to
+Smooth after recovery in every other mode, and changing modes during an active
+release. Run it with the CMake test
 target or compile directly against `Source/Core/Limiter.cpp` using C++20.
 
 This core does not provide resampling, true peak detection, dither, loudness

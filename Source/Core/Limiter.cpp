@@ -74,8 +74,18 @@ void Limiter::setSettings(const Settings& requested) noexcept {
     settings_.clip = bounded(requested.clip, 0, 1, 0);
     settings_.upwardDb = bounded(requested.upwardDb, 0, 12, 0);
     settings_.stereoLink = bounded(requested.stereoLink, 0, 1, 1);
-    settings_.mode = requested.mode >= Mode::Modern && requested.mode <= Mode::Classic
+    const auto mode = requested.mode >= Mode::Modern && requested.mode <= Mode::Classic
         ? requested.mode : Mode::Modern;
+    if (mode != settings_.mode) {
+        for (auto& channel : channels_) {
+            const auto current = settings_.mode == Mode::Smooth
+                ? .35 * channel.fast + .65 * channel.slow : channel.fast;
+            // Carry the active release into both branches instead of reviving
+            // an inactive Smooth history or discarding ongoing attenuation.
+            channel.fast = channel.slow = current;
+        }
+    }
+    settings_.mode = mode;
     driveTarget_ = dbGain(-settings_.thresholdDb);
     if (!started_) drive_ = driveTarget_;
     ceiling_ = dbGain(settings_.ceilingDb);

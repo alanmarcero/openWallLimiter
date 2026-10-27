@@ -295,6 +295,53 @@ void thresholdAutomationIsSmooth() {
     require(std::abs(atFifteenMilliseconds[0] - atFifteenMilliseconds[1]) < .0001f,
             "drive automation smoothing follows time across processing rates");
 }
+
+void modeChangesKeepCurrentRelease() {
+    // Re-entering Smooth must not resurrect a release from its previous visit.
+    for (const auto other : modes) {
+        if (other == wall::Mode::Smooth) continue;
+        wall::Limiter limiter;
+        limiter.prepare(48000, 1);
+        wall::Settings s;
+        s.mode = wall::Mode::Smooth;
+        limiter.setSettings(s);
+        auto audio = std::vector<float>(48000, 10);
+        limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
+        s.mode = other;
+        limiter.setSettings(s);
+        std::fill(audio.begin(), audio.end(), .01f);
+        limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
+        const auto recovered = audio.back();
+        require(recovered > .009f, "alternate mode recovers from previous limiting");
+        s.mode = wall::Mode::Smooth;
+        limiter.setSettings(s);
+        audio.assign(4800, .01f);
+        limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
+        require(std::all_of(audio.begin(), audio.end(), [&](float value) { return value >= recovered - 1e-6f; }),
+                "returning to Smooth cannot resurrect stale attenuation");
+    }
+
+    // A mode change during recovery must carry gain forward, not reset to unity.
+    for (const auto previous : modes)
+        for (const auto next : modes) {
+            wall::Limiter limiter;
+            limiter.prepare(48000, 1);
+            wall::Settings s;
+            s.mode = previous;
+            limiter.setSettings(s);
+            auto audio = std::vector<float>(48000, 10);
+            limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
+            audio.assign(1200, .01f);
+            limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
+            const auto before = audio.back();
+            s.mode = next;
+            limiter.setSettings(s);
+            audio.assign(64, .01f);
+            limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
+            require(audio.front() >= before && audio.back() < before * 1.2f,
+                    "mode change carries the active release without a gain reset");
+        }
+}
 } // namespace
 
 void* operator new(std::size_t n) {
@@ -315,5 +362,6 @@ int main() {
     anticipatedGainIsSmooth();
     lowCeilingAndAutomation();
     thresholdAutomationIsSmooth();
+    modeChangesKeepCurrentRelease();
     std::cout << "PASS: " << checks << " limiter behavior checks\n";
 }
