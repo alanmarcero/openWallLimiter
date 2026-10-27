@@ -6,4 +6,6 @@ Native host checks cover parameter/state roundtrip, every visible parameter cont
 
 Initial reconstructed-peak tests exposed downsampling overshoot; the post-downsampling lookahead guard was added and the same tests now pass. Review found stale Smooth release state after mode changes; transitions now preserve outgoing gain and the regression passes. Review also found disabled filter frequency changes retaining old coefficients; high/low-pass re-enable regressions now pass.
 
-Local macOS VST3 passed pluginval strictness 5. Published release workflows separately build and test macOS universal and Windows x64; their run records are the evidence for the downloadable artifacts. This record documents automated behavior, not a listening equivalence claim against another commercial plugin.
+Local macOS VST3 passed pluginval strictness 5, and the signed Audio Unit passed Apple auval. Published release workflows separately build and test macOS universal and Windows x64; their run records are the evidence for the downloadable artifacts. This record documents automated behavior, not a listening equivalence claim against another commercial plugin.
+
+Scoped review of the final guard passed all eight adversarial patterns; the worst reconstructed peak was -1.18739 dBTP with a -1 dB ceiling. A Linux sanitizer failure in the test allocation counter was fixed by supplying the matching sized-delete overloads; the DSP sanitizer CI job then passed.

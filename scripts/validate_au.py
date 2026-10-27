@@ -1,5 +1,4 @@
 """Validate a signed AU in an isolated temporary installation; leave existing files alone."""
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,7 +12,8 @@ if destination.exists() or destination.is_symlink():
 destination.parent.mkdir(parents=True, exist_ok=True)
 shutil.copytree(source, destination)
 try:
-    subprocess.run(['killall', 'AudioComponentRegistrar'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # The registrar can ignore SIGTERM and retain a previous failed discovery.
+    subprocess.run(['killall', '-9', 'AudioComponentRegistrar'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     subprocess.run(['auval', '-a'], check=True)
     subprocess.run(['auval', '-v', 'aufx', 'Owli', 'Amrc'], check=True)
