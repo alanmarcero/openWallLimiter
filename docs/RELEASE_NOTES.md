@@ -1,4 +1,4 @@
-# openWallLimiter 1.1.1
+# openWallLimiter 1.1.2
 
 A fix for lost treble at 44.1 kHz.
 
