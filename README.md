@@ -18,13 +18,13 @@ Double-click a knob/fader to restore its default, or type a precise value. Param
 
 | Character | Behavior |
 | --- | --- |
-| Modern | Release adapts to attenuation depth, balancing recovery and density. |
-| Smooth | Two release envelopes blend for slower, even recovery. |
-| Aggressive | Short recovery and the widest adjustable clipping range. |
-| Safe | Long recovery with intentional clipping disabled. |
-| Classic | A single envelope recovers at a constant rate in dB. |
+| Modern | Balanced and punchy. 2.5 ms attack and a program-dependent release: transients recover fast, sustained limiting recovers slowly. |
+| Smooth | Transparent and relaxed. Full 5 ms attack and a rounded two-stage release. |
+| Aggressive | Loud and forward. 1 ms attack, fast release and the most transient clipping. |
+| Safe | Clean under heavy limiting. Full attack, long hold, slow release and no intentional clipping. |
+| Classic | Steady and familiar. The release recovers at a constant 40 dB per second. |
 
-**Upward** lifts quiet, audible material with a gate at very low levels. **Stereo link** blends independent channel detection toward shared gain reduction. The final true-peak guard is fully linked to preserve the stereo image. **Clip** trades some smooth gain reduction for peak shaping; it has no effect in Safe mode.
+**Upward** lifts quiet, audible material with a gate at very low levels. **Stereo link** blends independent channel detection toward shared gain reduction. The final true-peak guard is fully linked to preserve the stereo image. **Clip** lets transients clip instead of pulling the gain down. Sustained limiting shrinks the allowance, so held notes and bass stay clean. Clip has no effect in Safe mode.
 
 The meter panel includes short-term and gated integrated LUFS, maximum estimated true peak, sample input/output peaks, gain reduction and an eight-second history. Short-term LUFS needs three seconds of audio. The gain-reduction readout describes the main limiter envelope, excluding clipping, upward gain and the final true-peak guard. Peak and loudness meters read the selected monitoring output.
 
@@ -47,9 +47,9 @@ The signal path is:
 
 `high pass → low pass → oversampling → threshold drive/upward → lookahead limiter/clip → downsampling → true-peak guard → dither → monitoring`
 
-The limiter uses 5 ms lookahead. All oversampling paths are padded to one fixed reported latency, with another 128 samples for the final guard. Oversampling changes warm the new path and crossfade for 20 ms. CPU use rises temporarily during that transition. Buffers are allocated in preparation, outside the audio callback.
+The limiter delays audio by 5 ms. Each character's attack uses up to that lookahead. All oversampling paths are padded to one fixed reported latency, with another 128 samples for the final guard. Oversampling changes warm the new path and crossfade for 20 ms. CPU use rises temporarily during that transition. Buffers are allocated in preparation, outside the audio callback.
 
-True-peak protection uses an eight-phase, 96-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.3 dB reconstruction reserve. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
+True-peak protection uses an eight-phase, 96-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.3 dB reconstruction reserve. The main limiter limits to the same reserve, so the guard only removes reconstruction overshoot. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
 
 Gain match removes threshold makeup gain. Delta plays processed output minus the latency-aligned original; bypass plays that original. These audition paths can exceed the limiter ceiling. The dry reference includes the complete plugin latency and is taken before the filters. Floating-point processing is single precision with double-precision envelope/filter calculations. Supported host rates are 8–192 kHz, mono or stereo.
 

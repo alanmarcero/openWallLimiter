@@ -5,6 +5,21 @@
 
 namespace wall {
 namespace {
+// Times are in milliseconds. The Release control scales the release, sustain and classic
+// rates. clipDb is the clip allowance at Clip = 1.
+struct Profile {
+    double attack, hold, fast, slow, sustainAttack, sustainRelease, classicDbPerSecond, clipDb;
+    bool rounded;
+};
+constexpr std::array<Profile, 5> profiles{{
+    {2.5, 12, 45, 300, 400, 400, 0, 3, false},   // Modern
+    {5, 12, 60, 350, 300, 350, 0, 1.5, true},    // Smooth
+    {1, 3, 12, 150, 600, 200, 0, 5, false},      // Aggressive
+    {5, 25, 100, 450, 250, 400, 0, 0, true},     // Safe
+    {1.5, 10, 30, 300, 400, 400, 40, 3, false},  // Classic
+}};
+constexpr double maximumHoldSeconds = .025;
+
 double dbGain(double db) noexcept { return std::pow(10.0, db / 20.0); }
 float bounded(float value, float low, float high, float fallback) noexcept {
     return std::isfinite(value) ? std::clamp(value, low, high) : fallback;
@@ -32,20 +47,51 @@ double Limiter::Minimum::push(double value, std::uint64_t time, int window) noex
     return entries[head].value;
 }
 
+void Limiter::Box::reset() noexcept {
+    std::fill(values.begin(), values.end(), 1);
+    position = 0;
+    sum = length;
+    sumCorrection = 0;
+}
+
+void Limiter::Box::resize(int newLength) noexcept {
+    length = newLength;
+    sum = sumCorrection = 0;
+    for (int i = 1; i <= length; ++i)
+        sum += values[(position + values.size() - static_cast<std::size_t>(i)) % values.size()];
+}
+
+double Limiter::Box::push(double value) noexcept {
+    const auto leaving = values[(position + values.size() - static_cast<std::size_t>(length)) % values.size()];
+    values[position] = value;
+    position = (position + 1) % values.size();
+    // Compensated summation prevents long-session moving-average drift.
+    const auto difference = value - leaving - sumCorrection;
+    const auto next = sum + difference;
+    sumCorrection = (next - sum) - difference;
+    sum = next;
+    return std::clamp(sum / length, 0.0, 1.0);
+}
+
 void Limiter::prepare(double sampleRate, int channels) {
     sampleRate_ = std::isfinite(sampleRate) && sampleRate > 0
         ? std::clamp(sampleRate, 8000.0, 3072000.0) : 48000.0;
     channelCount_ = std::clamp(channels, 1, 2);
     latency_ = static_cast<int>(std::ceil(sampleRate_ * .005));
     const auto window = static_cast<std::size_t>(latency_ + 1);
+    const auto longestHold = static_cast<std::size_t>(std::ceil(sampleRate_ * maximumHoldSeconds));
     for (auto& channel : channels_) {
         channel.audio.resize(static_cast<std::size_t>(latency_));
+        channel.allowances.resize(static_cast<std::size_t>(latency_));
         channel.gains.resize(window);
-        channel.minimum.entries.resize(window);
+        channel.minimum.entries.resize(window + longestHold);
+        channel.first.values.resize(window + 1);
+        channel.second.values.resize(window + 1);
     }
     upwardAttack_ = slew(sampleRate_, .005);
     upwardRelease_ = slew(sampleRate_, .080);
     driveSlew_ = slew(sampleRate_, .005);
+    attack_ = 0;
     setSettings(settings_);
     reset();
 }
@@ -59,11 +105,12 @@ void Limiter::reset() noexcept {
     started_ = false;
     for (auto& channel : channels_) {
         std::fill(channel.audio.begin(), channel.audio.end(), 0);
+        std::fill(channel.allowances.begin(), channel.allowances.end(), 1);
         std::fill(channel.gains.begin(), channel.gains.end(), 1);
         channel.minimum.reset();
-        channel.sum = static_cast<double>(channel.gains.size());
-        channel.sumCorrection = 0;
-        channel.fast = channel.slow = 1;
+        channel.first.reset();
+        channel.second.reset();
+        channel.releaseDb = channel.roundDb = channel.sustainDb = 0;
     }
 }
 
@@ -77,13 +124,10 @@ void Limiter::setSettings(const Settings& requested) noexcept {
     const auto mode = requested.mode >= Mode::Modern && requested.mode <= Mode::Classic
         ? requested.mode : Mode::Modern;
     if (mode != settings_.mode) {
-        for (auto& channel : channels_) {
-            const auto current = settings_.mode == Mode::Smooth
-                ? .35 * channel.fast + .65 * channel.slow : channel.fast;
-            // Carry the active release into both branches instead of reviving
-            // an inactive Smooth history or discarding ongoing attenuation.
-            channel.fast = channel.slow = current;
-        }
+        // Both release stages start from the current attenuation. This prevents
+        // a stale rounding stage and a gain reset.
+        for (auto& channel : channels_)
+            channel.releaseDb = channel.roundDb = std::max(channel.releaseDb, channel.roundDb);
     }
     settings_.mode = mode;
     driveTarget_ = dbGain(-settings_.thresholdDb);
@@ -91,51 +135,53 @@ void Limiter::setSettings(const Settings& requested) noexcept {
     ceiling_ = dbGain(settings_.ceilingDb);
     upwardGain_ = dbGain(settings_.upwardDb);
 
-    double fastSeconds = .045, slowSeconds = .180, clipDb = 1.5;
-    switch (settings_.mode) {
-        case Mode::Smooth: fastSeconds = .120; slowSeconds = .280; clipDb = .75; break;
-        case Mode::Aggressive: fastSeconds = .025; slowSeconds = .025; clipDb = 6; break;
-        case Mode::Safe: fastSeconds = .250; slowSeconds = .250; clipDb = 0; break;
-        case Mode::Classic: fastSeconds = .100; slowSeconds = .100; clipDb = 3; break;
-        case Mode::Modern: break;
+    const auto& profile = profiles[static_cast<std::size_t>(mode)];
+    const double scale = settings_.release * .001;
+    releaseFast_ = slew(sampleRate_, profile.fast * scale);
+    releaseSlow_ = slew(sampleRate_, profile.slow * scale);
+    sustainAttack_ = slew(sampleRate_, profile.sustainAttack * scale);
+    sustainRelease_ = slew(sampleRate_, profile.sustainRelease * scale);
+    classicStepDb_ = profile.classicDbPerSecond / (sampleRate_ * settings_.release);
+    clipDb_ = profile.clipDb * settings_.clip;
+    hold_ = static_cast<int>(std::round(sampleRate_ * profile.hold * .001));
+    const auto attack = std::clamp(static_cast<int>(std::round(sampleRate_ * profile.attack * .001)), 1,
+                                   std::max(latency_, 1));
+    if (attack != attack_ && latency_ > 0) {
+        // Two cascaded averages span attack + 1 samples and give an S-shaped gain ramp.
+        attack_ = attack;
+        const auto first = (attack_ + 3) / 2;
+        for (auto& channel : channels_) {
+            channel.first.resize(first);
+            channel.second.resize(attack_ + 2 - first);
+        }
     }
-    releaseFast_ = slew(sampleRate_, fastSeconds * settings_.release);
-    releaseSlow_ = slew(sampleRate_, slowSeconds * settings_.release);
-    classicSlew_ = dbGain(60.0 / (sampleRate_ * settings_.release));
-    clipAllowance_ = dbGain(clipDb * settings_.clip);
-    clipKnee_ = settings_.mode == Mode::Safe ? 0 : .12 * settings_.clip;
 }
 
-double Limiter::releaseGain(Channel& channel, double target) const noexcept {
-    switch (settings_.mode) {
-        case Mode::Modern: {
-            // Deep attenuation recovers more slowly than light transient control.
-            const auto coefficient = releaseFast_ * channel.fast + releaseSlow_ * (1 - channel.fast);
-            channel.fast = std::min(target, channel.fast + coefficient * (target - channel.fast));
-            return channel.fast;
-        }
-        case Mode::Smooth:
-            channel.fast = std::min(target, channel.fast + releaseFast_ * (target - channel.fast));
-            channel.slow = std::min(target, channel.slow + releaseSlow_ * (target - channel.slow));
-            return .35 * channel.fast + .65 * channel.slow;
-        case Mode::Classic:
-            channel.fast = std::min(target, channel.fast * classicSlew_);
-            return channel.fast;
-        case Mode::Aggressive:
-        case Mode::Safe:
-            channel.fast = std::min(target, channel.fast + releaseFast_ * (target - channel.fast));
-            return channel.fast;
-    }
-    return target;
+double Limiter::releaseDb(Channel& channel, double heldDb) const noexcept {
+    const auto& profile = profiles[static_cast<std::size_t>(settings_.mode)];
+    auto& release = channel.releaseDb;
+    // Attenuation above the sustained level is a transient and releases fast.
+    // The sustained part releases slowly, so the gain does not follow the waveform.
+    const auto transient = std::max(0.0, release - std::max(heldDb, channel.sustainDb));
+    const auto body = std::max(0.0, std::min(release, channel.sustainDb) - heldDb);
+    const auto adaptive = release - transient * releaseFast_ - body * releaseSlow_;
+    release = std::max(heldDb, profile.classicDbPerSecond > 0 ? release - classicStepDb_ : adaptive);
+    // Sustain follows the held target, so a release tail does not count as sustained.
+    channel.sustainDb += (heldDb - channel.sustainDb)
+        * (heldDb > channel.sustainDb ? sustainAttack_ : sustainRelease_);
+    if (!profile.rounded) return channel.roundDb = release;
+    // A second release stage rounds the recovery corner.
+    channel.roundDb = std::max(release, channel.roundDb + releaseFast_ * (release - channel.roundDb));
+    return channel.roundDb;
 }
 
-double Limiter::shape(double sample) const noexcept {
-    if (clipKnee_ > 0) {
-        const double magnitude = std::abs(sample), start = ceiling_ * (1 - clipKnee_);
-        if (magnitude > start) {
-            const double span = ceiling_ - start;
-            sample = std::copysign(start + span * std::tanh((magnitude - start) / span), sample);
-        }
+double Limiter::shape(double sample, double allowance) const noexcept {
+    // The quadratic knee starts at ceiling * (2 - allowance). It reaches the ceiling with
+    // zero slope at ceiling * allowance, the largest magnitude the gain path passes.
+    const double magnitude = std::abs(sample), start = ceiling_ * (2 - allowance);
+    if (allowance > 1 && magnitude > start) {
+        const double over = magnitude - start;
+        sample = std::copysign(magnitude - over * over / (4 * ceiling_ * (allowance - 1)), sample);
     }
     return std::clamp(sample, -ceiling_, ceiling_);
 }
@@ -149,7 +195,11 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
         }
         return;
     }
-    const int window = latency_ + 1;
+    // The minimum covers the attack span plus the hold. The gain ring delays the smoothed
+    // gain by latency - attack samples, which aligns it with its audio sample.
+    const int window = attack_ + 1 + hold_;
+    const auto gainWindow = static_cast<std::uint64_t>(latency_ + 1);
+    const auto gainDelay = static_cast<std::uint64_t>(latency_ - attack_);
     double minimumGain = 1;
     started_ = true;
     for (int i = 0; i < samples; ++i) {
@@ -167,27 +217,27 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
             input[0] *= lift;
             input[1] *= lift;
         }
-        std::array<double, 2> target;
-        for (int c = 0; c < 2; ++c)
-            target[c] = std::min(1.0, ceiling_ * clipAllowance_ / std::max(std::abs(input[c]), 1e-30));
+        // Sustained attenuation shrinks the clip allowance, so clipping applies to transients.
+        std::array<double, 2> allowance, target;
+        for (int c = 0; c < 2; ++c) {
+            const auto sustainDb = channels_[c].sustainDb;
+            allowance[c] = dbGain(clipDb_ / (1 + sustainDb * sustainDb));
+            target[c] = std::min(1.0, ceiling_ * allowance[c] / std::max(std::abs(input[c]), 1e-30));
+        }
         const auto linked = std::min(target[0], target[1]);
         for (int c = 0; c < channelCount_; ++c) {
             auto& channel = channels_[c];
             const auto safeGain = target[c] + settings_.stereoLink * (linked - target[c]);
             const auto held = channel.minimum.push(safeGain, time_, window);
-            const auto envelope = releaseGain(channel, held);
-            const auto gainPosition = static_cast<std::size_t>(time_ % static_cast<std::uint64_t>(window));
-            // Compensated summation prevents long-session moving-average drift.
-            const auto difference = envelope - channel.gains[gainPosition] - channel.sumCorrection;
-            const auto sum = channel.sum + difference;
-            channel.sumCorrection = (sum - channel.sum) - difference;
-            channel.sum = sum;
-            channel.gains[gainPosition] = envelope;
-            const auto gain = std::clamp(channel.sum / window, 0.0, 1.0);
+            const auto envelope = dbGain(-releaseDb(channel, -20 * std::log10(std::max(held, 1e-30))));
+            channel.gains[time_ % gainWindow] = channel.second.push(channel.first.push(envelope));
+            const auto gain = channel.gains[(time_ + gainWindow - gainDelay) % gainWindow];
             minimumGain = std::min(minimumGain, gain);
             const auto delayed = channel.audio[position_];
+            const auto delayedAllowance = channel.allowances[position_];
             channel.audio[position_] = input[c];
-            const auto output = static_cast<float>(shape(delayed * gain));
+            channel.allowances[position_] = allowance[c];
+            const auto output = static_cast<float>(shape(delayed * gain, delayedAllowance));
             if (c == 0) left[i] = output;
             else if (right) right[i] = output;
         }

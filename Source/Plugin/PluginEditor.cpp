@@ -165,9 +165,11 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
                                  "monitoring signal can exceed the output ceiling.");
     buttons["gain_match"]->setTooltip("Remove threshold makeup gain for level-matched comparison.");
     const std::array<const char *, 5> hints{
-        "Adaptive recovery for punch and density", "Slower recovery for an even, rounded sound",
-        "Fast recovery and variable peak clipping", "Long recovery with intentional clipping disabled",
-        "Classic single-envelope release"};
+        "Short attack and program-dependent release for punch and density",
+        "Full lookahead and a rounded release for a transparent, relaxed sound",
+        "1 ms attack, fast release and the most transient clipping for a loud, forward sound",
+        "Full lookahead, long hold and slow release, with intentional clipping disabled",
+        "Constant-rate release in dB for a steady, classic recovery"};
     for (size_t i = 0; i < modes.size(); ++i) {
         modes[i].setButtonText(wall::modeNames[int(i)]);
         modes[i].setComponentID("mode" + juce::String(int(i)));

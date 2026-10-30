@@ -37,11 +37,21 @@ private:
         void reset() noexcept;
         double push(double value, std::uint64_t time, int window) noexcept;
     };
+    // Moving average of the newest `length` values in a fixed-capacity ring.
+    struct Box {
+        std::vector<double> values;
+        std::size_t position = 0;
+        int length = 1;
+        double sum = 1, sumCorrection = 0;
+        void reset() noexcept;
+        void resize(int newLength) noexcept;
+        double push(double value) noexcept;
+    };
     struct Channel {
-        std::vector<double> audio, gains;
+        std::vector<double> audio, allowances, gains;
         Minimum minimum;
-        double sum = 0, sumCorrection = 0;
-        double fast = 1, slow = 1;
+        Box first, second;
+        double releaseDb = 0, roundDb = 0, sustainDb = 0;
     };
     std::array<Channel, 2> channels_;
     Settings settings_;
@@ -50,15 +60,15 @@ private:
     double ceiling_ = .8912509381337456;
     double upwardGain_ = 1, upwardEnvelope_ = 0;
     double upwardAttack_ = 0, upwardRelease_ = 0;
-    double releaseFast_ = 0, releaseSlow_ = 0, classicSlew_ = 1;
-    double clipAllowance_ = 1, clipKnee_ = 0;
-    int channelCount_ = 1, latency_ = 0;
+    double releaseFast_ = 0, releaseSlow_ = 0, sustainAttack_ = 0, sustainRelease_ = 0, classicStepDb_ = 0;
+    double clipDb_ = 0;
+    int channelCount_ = 1, latency_ = 0, attack_ = 0, hold_ = 0;
     std::size_t position_ = 0;
     std::uint64_t time_ = 0;
     float reductionDb_ = 0;
     bool started_ = false;
-    double releaseGain(Channel&, double target) const noexcept;
-    double shape(double sample) const noexcept;
+    double releaseDb(Channel&, double heldDb) const noexcept;
+    double shape(double sample, double allowance) const noexcept;
 };
 
 } // namespace wall

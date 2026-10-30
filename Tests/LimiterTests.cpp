@@ -218,13 +218,37 @@ void driveUpwardModesAndRelease() {
 void anticipatedGainIsSmooth() {
     std::vector<float> input(2000, .1f);
     input[1000] = 10;
-    auto output = render(input, {});
+    wall::Settings s;
+    s.mode = wall::Mode::Smooth;
+    auto output = render(input, s);
     const int latency = 240;
-    require(output[1000] < .0999f && output[1000] > .09f, "gain begins anticipating before delayed impulse");
+    require(output[1000] > .0999f && output[1000 + latency / 4] < .0999f,
+            "gain eases in across the full lookahead before the delayed impulse");
     float largestStep = 0;
     for (int i = 1001; i < 1000 + latency; ++i)
         largestStep = std::max(largestStep, std::abs(output[i] - output[i - 1]));
     require(largestStep < .002f, "lookahead gain changes smoothly across anticipation");
+}
+
+void sustainedBassStaysClean() {
+    // 6 dB of limiting on a steady 50 Hz tone must not modulate the waveform.
+    std::vector<float> input(48000);
+    for (std::size_t i = 0; i < input.size(); ++i)
+        input[i] = 1.78f * std::sin(static_cast<float>(2 * 3.14159265358979 * 50 * double(i) / 48000));
+    for (const auto mode : {wall::Mode::Modern, wall::Mode::Smooth, wall::Mode::Safe, wall::Mode::Classic}) {
+        wall::Settings s;
+        s.mode = mode;
+        const auto output = render(input, s);
+        double sine = 0, cosine = 0, energy = 0;
+        for (std::size_t i = 24000; i < 48000; ++i) {
+            const auto phase = 2 * 3.14159265358979 * 50 * double(i) / 48000;
+            sine += output[i] * std::sin(phase);
+            cosine += output[i] * std::cos(phase);
+            energy += double(output[i]) * output[i];
+        }
+        const auto fundamental = 2 * (sine * sine + cosine * cosine) / 24000;
+        require((energy - fundamental) / energy < 1e-8, "sustained bass is limited without audible distortion");
+    }
 }
 
 void lowCeilingAndAutomation() {
@@ -309,7 +333,8 @@ void modeChangesKeepCurrentRelease() {
         limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
         s.mode = other;
         limiter.setSettings(s);
-        std::fill(audio.begin(), audio.end(), .01f);
+        // A second of sustained limiting releases slowly, so allow two seconds.
+        audio.assign(96000, .01f);
         limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
         const auto recovered = audio.back();
         require(recovered > .009f, "alternate mode recovers from previous limiting");
@@ -338,7 +363,8 @@ void modeChangesKeepCurrentRelease() {
             limiter.setSettings(s);
             audio.assign(64, .01f);
             limiter.process(audio.data(), nullptr, static_cast<int>(audio.size()));
-            require(audio.front() >= before && audio.back() < before * 1.2f,
+            // Each mode aligns its own attack, so the switch may step the gain by under 0.2 dB.
+            require(audio.front() >= before * .977f && audio.back() < before * 1.2f,
                     "mode change carries the active release without a gain reset");
         }
 }
@@ -362,6 +388,7 @@ int main() {
     silenceInvalidAndAllocation();
     driveUpwardModesAndRelease();
     anticipatedGainIsSmooth();
+    sustainedBassStaysClean();
     lowCeilingAndAutomation();
     thresholdAutomationIsSmooth();
     modeChangesKeepCurrentRelease();

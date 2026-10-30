@@ -17,30 +17,34 @@ were used.
   instead uses finite gain smoothing and an explicit final sample guard.
 - [Geraint Luff, Designing a straightforward limiter](https://signalsmith-audio.co.uk/writing/2022/limiter/):
   mathematical background for combining a moving minimum with finite smoothing
-  and delayed audio. The ring queues and processing code here were written for
-  this project; no Signalsmith implementation is included.
+  and delayed audio, for extending the minimum as a hold, and for cascading
+  averages to round the gain curve. The ring queues and processing code here were
+  written for this project; no Signalsmith implementation is included.
 
 ## Signal path and latency
 
-`sanitized input -> threshold drive -> gated upward lift -> audio delay -> gain -> soft clip -> ceiling guard`
+`sanitized input -> threshold drive -> gated upward lift -> audio delay -> gain -> clip knee -> ceiling guard`
 
-The parallel gain path computes a safe gain per channel, links towards the smaller
-gain, holds the moving minimum, applies the selected release, and smooths the gain
-with a rectangular moving average. Input and internal gain state use double
-precision; the public buffers contain floats.
+The parallel gain path computes a safe gain per channel and links it towards the
+smaller gain. It holds the moving minimum, applies the selected release in dB, and
+smooths the gain with two cascaded moving averages. A gain ring then aligns the
+gain with the delayed audio. Input and internal gain state use double precision;
+the public buffers contain floats.
 
 Let `N = ceil(processing sample rate * 0.005)`. The audio delay is exactly `N`
-samples in every mode. Both the moving minimum and gain average contain `N+1`
-samples. An input target at time `t` constrains every held target from `t` through
-`t+N`. Release never exceeds the held target. Consequently all terms contributing
-to the smoothed gain at `t+N` obey that input's limit. This gives an anticipatory
-linear gain transition without an instantaneous attack on the audible transient.
+samples in every mode. Each mode has an attack of `A <= N` samples and a hold of
+`H` samples. The moving minimum spans `A+1+H` samples. The two averages have
+lengths `L1 = floor((A+3)/2)` and `L2 = A+2-L1`, so together they span `A+1`
+samples. The gain ring delays the smoothed gain by `N-A` samples. An input target
+therefore constrains every gain term that reaches its own audio sample. Release
+never exceeds the held target. The cascade gives an S-shaped gain ramp of `A`
+samples, which starts and ends with zero slope. The hold keeps the gain flat
+between waveform peaks, so the release does not follow a low-frequency cycle.
 
-When intentional clipping is disabled, the target is
-`min(1, ceilingAmplitude / abs(drivenInput))`. With clipping enabled, the numerator
-also contains the mode's clipping allowance. The final symmetric guard always
-limits sample magnitude to the current ceiling, including after automation. Float
-rounding can introduce approximately one float ULP at the boundary.
+The target is `min(1, ceilingAmplitude * allowance / abs(drivenInput))`. The
+allowance is 1 when Clip is 0. The final symmetric guard always limits sample
+magnitude to the current ceiling, including after automation. Float rounding can
+introduce approximately one float ULP at the boundary.
 
 The caller must add any resampling filter delay to the reported delay. At
 oversampling factor `F`, the core contributes `ceil(hostRate*F*.005)/F` host
@@ -50,28 +54,43 @@ belong to the plugin layer.
 
 ## Policies
 
-All times in this table are base release constants, multiplied by the release
-control. The exponential coefficient is `1 - exp(-1/(sampleRate*time))`.
+The five modes follow the intent of the five L4 modes: Modern is balanced and
+punchy, Smooth is transparent and relaxed, Aggressive is loud and forward, Safe
+stays clean under heavy limiting, and Classic gives a steady legacy-style
+recovery. The tuning below is this project's own.
 
-| Mode | Recovery policy | Maximum clip allowance at Clip = 1 |
-| --- | --- | --- |
-| Modern | Single release whose coefficient interpolates between 45 ms at unity gain and 180 ms at deep attenuation | 1.5 dB |
-| Smooth | Weighted sum of independent 120 ms (35%) and 280 ms (65%) releases | 0.75 dB |
-| Aggressive | Fast 25 ms exponential recovery | 6 dB |
-| Safe | Conservative 250 ms exponential recovery | 0 dB; Clip has no effect |
-| Classic | Gain returns at 60 dB/second, scaled inversely by Release | 3 dB |
+The Release control multiplies the fast, slow, sustain and classic times. Attack
+and hold do not scale. The exponential coefficient is `1 - exp(-1/(sampleRate*time))`.
 
-On a mode change, both release branches initialize from the previous mode's
-current effective release gain (the weighted fast/slow value when leaving Smooth).
-The lookahead and smoothing histories continue. Returning to Smooth therefore
-cannot revive attenuation left over from an earlier visit, and changing policies
-during a release preserves the active attenuation.
+| Mode | Attack | Hold | Release (fast / slow) | Sustain (rise / fall) | Clip allowance at Clip = 1 |
+| --- | --- | --- | --- | --- | --- |
+| Modern | 2.5 ms | 12 ms | 45 / 300 ms | 400 / 400 ms | 3 dB |
+| Smooth | 5 ms | 12 ms | 60 / 350 ms, plus a 60 ms rounding stage | 300 / 350 ms | 1.5 dB |
+| Aggressive | 1 ms | 3 ms | 12 / 150 ms | 600 / 200 ms | 5 dB |
+| Safe | 5 ms | 25 ms | 100 / 450 ms, plus a 100 ms rounding stage | 250 / 400 ms | 0 dB; Clip has no effect |
+| Classic | 1.5 ms | 10 ms | Constant 40 dB per second | 400 / 400 ms | 3 dB |
 
-Clipping allowance increases continuously with Clip. A symmetric tanh shoulder
-starts at `ceiling * (1 - .12*Clip)` and asymptotically approaches the ceiling.
-The shoulder runs only when Clip is positive, and never runs in Safe mode. Clip
-therefore trades attenuation for intentional saturation; Safe still produces the
-normal modulation distortion inherent in gain limiting under difficult material.
+The release runs in dB. A sustain detector follows the held attenuation with the
+rise and fall times above. Attenuation above the sustain level counts as a
+transient and releases with the fast time. Attenuation below it releases with the
+slow time. A short peak therefore recovers quickly, while dense material keeps a
+steady gain and does not modulate its own waveform. Classic replaces both times
+with a constant-rate recovery and keeps the sustain detector for clipping. Smooth
+and Safe pass the release through a second one-pole stage that rounds the
+recovery corner.
+
+On a mode change, both release stages start from the current attenuation. The
+lookahead and smoothing histories continue, and the averages recompute their sums
+for the new attack. Returning to a rounded mode therefore cannot revive old
+attenuation. Because each mode aligns its own attack, a mode change during a
+release can step the gain by up to about 0.2 dB.
+
+The clip allowance in dB is `clipDb * Clip / (1 + sustainDb^2)`. Sustained
+limiting therefore shrinks the allowance towards 0 dB, and clipping applies mainly
+to transients. Each delayed sample carries the allowance that its target used. A
+quadratic knee starts at `ceiling * (2 - allowance)` and reaches the ceiling with
+zero slope at `ceiling * allowance`, the largest magnitude the gain path passes.
+With an allowance of 1, the knee does nothing. Safe never clips intentionally.
 
 Threshold adds `-thresholdDb` of input drive independently of the output ceiling.
 During playback, drive changes follow a 5 ms exponential time constant at the
@@ -131,9 +150,10 @@ protection through 3.072 MHz, low ceilings with reconstruction margin, determini
 block partitioning, reset, independent/linked stereo, silence and upward gating,
 malformed inputs/settings, distinct modes, release scaling, smooth anticipation,
 threshold automation smoothing across sample rates, and 2,000 automation blocks
-with allocation tracking. Mode-transition regressions also cover returning to
-Smooth after recovery in every other mode, and changing modes during an active
-release. Run it with the CMake test
+with allocation tracking. A distortion check limits a steady 50 Hz tone by 6 dB
+and requires a residual below -80 dB in every mode except Aggressive.
+Mode-transition regressions also cover returning to Smooth after recovery in
+every other mode, and changing modes during an active release. Run it with the CMake test
 target or compile directly against `Source/Core/Limiter.cpp` using C++20.
 
 This core does not provide resampling, true peak detection, dither, loudness
@@ -145,7 +165,7 @@ before using a new limiter on release masters.
 
 The wrapper adds the openMaster high/low-pass stage **before** oversampling and detection. JUCE FIR half-band stages provide 1/2/4/8/16x processing; true-peak mode enforces at least 4x. Each quality path is padded to one fixed delay. A cold quality path warms before a 20 ms crossfade.
 
-After downsampling, `TruePeakGuard` estimates eight fractional phases with a normalized 96-tap windowed-sinc detector. It holds required linked gain over 192 samples, adds 50 ms recovery, smooths gain over 64 samples, and applies it to audio delayed by 128 samples. A 0.3 dB reserve covers small detector/reconstruction differences. The independent host test uses a 16-phase, 64-tap reconstruction. The finite detector is an estimate; no universal reconstruction-filter guarantee is claimed.
+After downsampling, `TruePeakGuard` estimates eight fractional phases with a normalized 96-tap windowed-sinc detector. It holds required linked gain over 192 samples, adds 50 ms recovery, smooths gain over 64 samples, and applies it to audio delayed by 128 samples. A 0.3 dB reserve covers small detector/reconstruction differences. With True Peak on, the main limiter also limits to the reserve, so the guard only removes reconstruction overshoot and does not add gain modulation of its own. The independent host test uses a 16-phase, 64-tap reconstruction. The finite detector is an estimate; no universal reconstruction-filter guarantee is claimed.
 
 The reused K-weighted meter follows BS.1770-style absolute/relative gates with exact energy sums and a 0.001 LU histogram for the integrated gate. See the [ITU BS.1770 recommendation](https://www.itu.int/rec/R-REC-BS.1770/en). Short-term averaging uses 3 seconds. LRA is not implemented. TPDF dither is unshaped, independently generated per sample/channel, and quantizes to 16 or 24 bits.
 
@@ -155,11 +175,10 @@ The mode names describe this project's tuning. They are not names of copied publ
 
 | Implementation | Public basis and what is original here |
 | --- | --- |
-| Modern | [Luff's release-curve discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#release-curve) supplies the exponential-recovery building block. Interpolating its coefficient by attenuation depth and the 45/180 ms tuning are original choices here. |
-| Smooth | The same exponential building block, with an original parallel 35%/65% mixture at 120/280 ms. This is a parallel mixture, not Luff's illustrated series cascade. |
-| Aggressive / Safe | Exponential recovery with independently chosen 25/250 ms constants. The clip allocation and Safe's no-intentional-clipping policy are original. |
-| Classic | [Luff's alternative-release discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#alternative-release-curves) motivates exploring other recovery laws. This implementation multiplies linear gain by a fixed factor per sample, giving its original 60 dB/second recovery rule. It is not a published L2 emulation. |
-| Upward and clipping | Original gated amplitude-envelope lift and tanh shoulder, with the equations/ranges documented above. The [L4 guide](https://assets.wavescdn.com/pdf/plugins/l4-ultramaximizer.pdf) is a workflow reference, not the source of these transfer functions. |
+| Attack, hold and smoothing | [Luff's limiter article](https://signalsmith-audio.co.uk/writing/2022/limiter/) describes the moving minimum, the hold extension and cascaded box filters. The per-mode attack alignment through a gain ring and the attack/hold tuning are original. |
+| Modern / Smooth / Aggressive / Safe | [Luff's release-curve discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#release-curve) supplies the exponential-recovery building block and the series cascade used for rounding. The sustain detector that splits transient and sustained attenuation, and all times, are original. The [L4 guide](https://assets.wavescdn.com/pdf/plugins/l4-ultramaximizer.pdf) describes program-adaptive release and clipping as a goal, not a method. |
+| Classic | [Luff's alternative-release discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#alternative-release-curves) motivates other recovery laws. This implementation recovers at a constant 40 dB per second. It is not a published L2 emulation. |
+| Upward and clipping | Original gated amplitude-envelope lift, sustain-scaled clip allowance and quadratic knee, with the equations/ranges documented above. The L4 guide is a workflow reference, not the source of these transfer functions. |
 | True-peak reconstruction | Windowed-sinc FIR construction is explained by Steven W. Smith in [The Scientist and Engineer's Guide to DSP, Chapter 16](https://www.dspguide.com/CH16.PDF). The eight-phase/96-tap detector, gain scheduling and reserve are this project's design and are tested independently. |
 | Oversampling | [JUCE 8.0.9 Oversampling implementation](https://github.com/juce-framework/JUCE/blob/8.0.9/modules/juce_dsp/processors/juce_Oversampling.cpp), using its FIR half-band stages. |
 | High/low-pass stage | Reused MIT-licensed [openMaster Butterworth design](https://github.com/alanmarcero/openMaster/blob/8e0c6f00b17ceb37446da5c942ba1af9e22f36fc/Source/Core/ButterworthCoeffs.cpp) and multipole cascade. [Robert Bristow-Johnson's Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/) documents the underlying digital low/high-pass biquad forms. |

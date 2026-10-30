@@ -173,7 +173,7 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
     const bool tp = value(8) > .5f;
     wall::Settings settings;
     settings.thresholdDb = value(0);
-    settings.ceilingDb = value(1);
+    settings.ceilingDb = value(1) + (tp ? wall::TruePeakGuard::reserveDb : 0.f);
     settings.mode = static_cast<wall::Mode>(int(value(2)));
     settings.release = value(3);
     settings.clip = value(4) * .01f;

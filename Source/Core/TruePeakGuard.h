@@ -10,6 +10,9 @@ namespace wall {
 class TruePeakGuard {
   public:
     static constexpr int delaySamples = 128;
+    // Reconstruction reserve. The main limiter also limits to it, so the guard only removes overshoot.
+    static constexpr float reserveDb = -.3f;
+    static constexpr double reserve = .96605087899;
     void prepare(double sr) noexcept {
         release = 1 - std::exp(-1 / (sr * .05));
         reset();
@@ -48,8 +51,7 @@ class TruePeakGuard {
                          audio[channel][size_t((position - k + delaySamples) % delaySamples)];
                 peak = std::max(peak, std::abs(v));
             }
-        const double target = std::min(1., double(ceiling) * .96605087899 /
-                                               std::max(peak, 1e-20)); // 0.3 dB reconstruction reserve.
+        const double target = std::min(1., double(ceiling) * reserve / std::max(peak, 1e-20));
         targets[size_t(targetPosition)] = target;
         targetPosition = (targetPosition + 1) % int(targets.size());
         const double held = *std::min_element(targets.begin(), targets.end());
