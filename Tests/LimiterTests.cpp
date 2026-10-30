@@ -43,7 +43,8 @@ void ceilingAndLatency() {
         wall::Limiter limiter;
         limiter.prepare(rate, 1);
         const int latency = limiter.latencySamples();
-        require(latency == static_cast<int>(std::ceil(rate * .005)), "fixed five millisecond latency");
+        require(latency % 16 == 0 && latency >= rate * .005 && latency < rate * .005 + 16,
+                "five millisecond latency rounded up to a multiple of 16");
         std::vector<float> impulse(latency + 32, 0);
         impulse[0] = .1f;
         limiter.process(impulse.data(), nullptr, static_cast<int>(impulse.size()));

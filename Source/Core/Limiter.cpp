@@ -77,7 +77,8 @@ void Limiter::prepare(double sampleRate, int channels) {
     sampleRate_ = std::isfinite(sampleRate) && sampleRate > 0
         ? std::clamp(sampleRate, 8000.0, 3072000.0) : 48000.0;
     channelCount_ = std::clamp(channels, 1, 2);
-    latency_ = static_cast<int>(std::ceil(sampleRate_ * .005));
+    // A multiple of 16 keeps the base-rate latency whole at every oversampling factor.
+    latency_ = static_cast<int>(std::ceil(sampleRate_ * .005 / 16)) * 16;
     const auto window = static_cast<std::size_t>(latency_ + 1);
     const auto longestHold = static_cast<std::size_t>(std::ceil(sampleRate_ * maximumHoldSeconds));
     for (auto& channel : channels_) {

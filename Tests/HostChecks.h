@@ -154,8 +154,9 @@ inline void quality() {
         const int latency = p.getLatencySamples();
         for (int quality = 0; quality < 5; ++quality) {
             set(p, "oversampling", float(quality));
-            render(p, tone(12000, sr, 2000, .02f), 4097);
+            const auto treble = rmsTail(render(p, tone(12000, sr, 15000, .02f), 4097));
             require(p.getLatencySamples() == latency, "quality change alters latency");
+            require(std::abs(treble * std::sqrt(2.) / .02 - 1) < .03, "oversampling keeps treble flat");
         }
         juce::AudioProcessor::BusesLayout layout;
         layout.inputBuses.add(juce::AudioChannelSet::mono());
