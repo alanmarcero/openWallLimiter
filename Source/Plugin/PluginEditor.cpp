@@ -188,8 +188,29 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
                         1);
     presets.setSelectedId(1, juce::dontSendNotification);
     presets.setComponentID("presets");
+    presets.setTooltip("Choose a factory limiter preset or cycle through with < and >.");
     presets.onChange = [this] { wallProcessor.applyPreset(presets.getSelectedItemIndex()); };
     addAndMakeVisible(presets);
+    prevPreset.setComponentID("prev_preset");
+    prevPreset.setTooltip("Previous preset");
+    prevPreset.onClick = [this] {
+        const int numItems = presets.getNumItems();
+        if (numItems <= 0) return;
+        const int cur = presets.getSelectedItemIndex();
+        const int next = (cur <= 0 ? numItems : cur) - 1;
+        presets.setSelectedItemIndex(next, juce::sendNotificationSync);
+    };
+    addAndMakeVisible(prevPreset);
+    nextPreset.setComponentID("next_preset");
+    nextPreset.setTooltip("Next preset");
+    nextPreset.onClick = [this] {
+        const int numItems = presets.getNumItems();
+        if (numItems <= 0) return;
+        const int cur = presets.getSelectedItemIndex();
+        const int next = (cur + 1) % numItems;
+        presets.setSelectedItemIndex(next, juce::sendNotificationSync);
+    };
+    addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
     reset.onClick = [this] { wallProcessor.resetMeters(); };
     addAndMakeVisible(reset);
@@ -234,7 +255,9 @@ void WallEditor::timerCallback() {
     repaint();
 }
 void WallEditor::resized() {
-    presets.setBounds(825, 22, 267, 32);
+    prevPreset.setBounds(825, 22, 28, 32);
+    presets.setBounds(857, 22, 203, 32);
+    nextPreset.setBounds(1064, 22, 28, 32);
     buttons["highpass_on"]->setBounds(40, 105, 104, 29);
     sliders["highpass_hz"]->setBounds(152, 94, 202, 58);
     combos["highpass_slope"]->setBounds(368, 105, 136, 29);
