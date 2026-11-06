@@ -36,6 +36,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     std::vector<std::unique_ptr<ButtonAttachment>> buttonAttachments;
     std::array<juce::TextButton, 5> modes;
     juce::ComboBox presets;
+    juce::TextButton prevPreset{"<"}, nextPreset{">"};
     juce::TextButton reset{"Reset meters"}, link{"Link"};
     juce::TooltipWindow tooltip{this, 650};
     std::array<float, 240> inputHistory{}, outputHistory{}, reductionHistory{};
