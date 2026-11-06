@@ -12,13 +12,13 @@ struct Profile {
     bool rounded;
 };
 constexpr std::array<Profile, 5> profiles{{
-    {2.5, 12, 45, 300, 400, 400, 0, 3, false},   // Modern
-    {5, 12, 60, 350, 300, 350, 0, 1.5, true},    // Smooth
-    {1, 3, 12, 150, 600, 200, 0, 5, false},      // Aggressive
-    {5, 25, 100, 450, 250, 400, 0, 0, true},     // Safe
-    {1.5, 10, 30, 300, 400, 400, 40, 3, false},  // Classic
+    {2.2, 20, 40, 260, 200, 350, 0, 2.0, true},   // Modern
+    {4.5, 24, 65, 360, 250, 400, 0, 1.0, true},   // Smooth
+    {1.2, 18, 22, 130, 250, 200, 0, 2.5, true},   // Aggressive
+    {4.5, 26, 90, 450, 200, 400, 0, 0.0, true},   // Safe
+    {1.8, 20, 30, 240, 220, 320, 0, 1.8, true},   // Classic
 }};
-constexpr double maximumHoldSeconds = .025;
+constexpr double maximumHoldSeconds = .040;
 
 double dbGain(double db) noexcept { return std::pow(10.0, db / 20.0); }
 float bounded(float value, float low, float high, float fallback) noexcept {
