@@ -53,9 +53,14 @@ def publish(tag, repository, source_directory, dist):
         if str(release.get('status')) != '404':
             raise RuntimeError(f'Release lookup failed: {result.stderr.strip()}')
         validate_packages(dist, repository, revision)
+        # The tag already exists and matches this checkout. Do not pass the
+        # commit SHA as --target. The Releases API then requires workflows:write
+        # when that commit's workflow tree differs from the default branch, and
+        # GITHUB_TOKEN cannot be granted that scope (HTTP 403, run 41108883571).
+        # --verify-tag binds the release to the existing tag.
         subprocess.run([
             'gh', 'release', 'create', tag, *(str(dist / name) for name in ASSETS),
-            '--repo', repository, '--verify-tag', '--target', revision,
+            '--repo', repository, '--verify-tag',
             '--notes-file', str(source_directory / 'docs/RELEASE_NOTES.md'),
             '--title', f'openWallLimiter {tag}',
         ], check=True)

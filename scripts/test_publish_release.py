@@ -78,7 +78,7 @@ class PublishReleaseTests(unittest.TestCase):
         elif command[1:3] == ['release', 'create']:
             self.assertEqual(command[3], 'v1.0.0')
             self.assertIn('--verify-tag', command)
-            self.assertEqual(command[command.index('--target') + 1], self.revision)
+            self.assertNotIn('--target', command)
             self.assertEqual(Path(command[command.index('--notes-file') + 1]).read_text(), 'Release notes')
             if self.api_status == 404 and self.create_status == 0:
                 self.created.mkdir()
