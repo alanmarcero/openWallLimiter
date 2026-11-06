@@ -18,6 +18,11 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    # contents: write is the GITHUB_TOKEN scope that can create a release.
+    # workflows: write cannot be granted to GITHUB_TOKEN. publish_release.py
+    # must not send a commit SHA as target_commitish: that API check returned
+    # HTTP 403 on run 41108883571 when the SHA's workflow tree was not the
+    # default-branch tip.
     permissions:
       contents: write
     steps:
