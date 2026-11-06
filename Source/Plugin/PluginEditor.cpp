@@ -165,11 +165,11 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
                                  "monitoring signal can exceed the output ceiling.");
     buttons["gain_match"]->setTooltip("Remove threshold makeup gain for level-matched comparison.");
     const std::array<const char *, 5> hints{
-        "Short attack and program-dependent release for punch and density",
-        "Full lookahead and a rounded release for a transparent, relaxed sound",
-        "1 ms attack, fast release and the most transient clipping for a loud, forward sound",
-        "Full lookahead, long hold and slow release, with intentional clipping disabled",
-        "Constant-rate release in dB for a steady, classic recovery"};
+        "2.5 ms attack. Transients release faster than sustained limiting.",
+        "5 ms attack and a second release stage that rounds the recovery.",
+        "1 ms attack, fast release, and the largest clip allowance.",
+        "5 ms attack, 25 ms hold, slow release, and no intentional clipping.",
+        "Release falls at a constant rate: 40 dB/s at the default Release."};
     for (size_t i = 0; i < modes.size(); ++i) {
         modes[i].setButtonText(wall::modeNames[int(i)]);
         modes[i].setComponentID("mode" + juce::String(int(i)));
@@ -327,8 +327,7 @@ void WallEditor::paint(juce::Graphics &g) {
     mark.closeSubPath();
     g.setColour(brass);
     g.fillPath(mark);
-    text(g, "openWallLimiter", {80, 15, 480, 35}, 29, paper);
-    text(g, "A fortress for your final mix", {82, 49, 500, 18}, 12, muted);
+    text(g, "openWallLimiter", {80, 18, 480, 40}, 29, paper);
     box(g, {24, 89, 496, 75});
     box(g, {599, 89, 497, 75});
     text(g, "Pre-limiter filters", {24, 171, 220, 18}, 12, paper);
@@ -338,7 +337,6 @@ void WallEditor::paint(juce::Graphics &g) {
     box(g, {930, 255, 166, 290});
     text(g, "Threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred);
     text(g, "Ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred);
-    text(g, "Push into the wall", {36, 493, 142, 16}, 11, muted, juce::Justification::centred);
     text(g, "Maximum output", {943, 504, 140, 20}, 11, muted, juce::Justification::centred);
     const std::array<juce::String, 4> values{reading(wallProcessor.reductionDb.load(), " dB"),
                                              reading(wallProcessor.shortLufs.load(), " LUFS"),
@@ -352,8 +350,8 @@ void WallEditor::paint(juce::Graphics &g) {
     }
     drawGraph(g);
     const std::array<const char *, 4> names{"Release", "Clip", "Upward", "Stereo link"};
-    const std::array<const char *, 4> desc{"Recovery time", "Peak character", "Quiet detail",
-                                           "Image stability"};
+    const std::array<const char *, 4> desc{"Recovery time", "Transient clip", "Upward gain",
+                                           "Channel link"};
     for (size_t i = 0; i < 4; ++i) {
         int x = 250 + int(i) * 170;
         text(g, names[i], {x, 537, 135, 20}, 14, paper, juce::Justification::centred);

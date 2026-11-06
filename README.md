@@ -1,12 +1,12 @@
 # openWallLimiter
 
-A mastering limiter with five characters and a wall that holds. Selectable high/low-pass filters shape the signal before it reaches the limiter.
+A mastering limiter with five characters, pre-limiter high-pass and low-pass filters, and true-peak protection.
 
 ![openWallLimiter](docs/screenshots/openWallLimiter.png)
 
 [Download VST3 / AU](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
-## Shape the final mix
+## Controls
 
 1. Set the **High pass** and **Low pass** filters. Their ranges, slopes and defaults match [openMaster](https://github.com/alanmarcero/openMaster): 10–200 Hz and 8–24 kHz, with 12/24/48/72/96 dB/oct Butterworth slopes. Click either filter's button to bypass it. Filters run before input drive and limiting.
 2. Lower **Threshold** to push the mix into limiting, and set **Ceiling** for the output peak level. **Link** moves the two faders together when dragging.
