@@ -64,20 +64,21 @@ and hold do not scale. The exponential coefficient is `1 - exp(-1/(sampleRate*ti
 
 | Mode | Attack | Hold | Release (fast / slow) | Sustain (rise / fall) | Clip allowance at Clip = 1 |
 | --- | --- | --- | --- | --- | --- |
-| Modern | 2.5 ms | 12 ms | 45 / 300 ms | 400 / 400 ms | 3 dB |
-| Smooth | 5 ms | 12 ms | 60 / 350 ms, plus a 60 ms rounding stage | 300 / 350 ms | 1.5 dB |
-| Aggressive | 1 ms | 3 ms | 12 / 150 ms | 600 / 200 ms | 5 dB |
-| Safe | 5 ms | 25 ms | 100 / 450 ms, plus a 100 ms rounding stage | 250 / 400 ms | 0 dB; Clip has no effect |
-| Classic | 1.5 ms | 10 ms | Constant 40 dB per second | 400 / 400 ms | 3 dB |
+| Modern | 2.2 ms | 20 ms | 40 / 260 ms, plus rounding stage | 200 / 350 ms | 2.0 dB |
+| Smooth | 4.5 ms | 24 ms | 65 / 360 ms, plus rounding stage | 250 / 400 ms | 1.0 dB |
+| Aggressive | 1.2 ms | 18 ms | 22 / 130 ms, plus rounding stage | 250 / 200 ms | 2.5 dB |
+| Safe | 4.5 ms | 26 ms | 90 / 450 ms, plus rounding stage | 200 / 400 ms | 0 dB; Clip has no effect |
+| Classic | 1.8 ms | 20 ms | 30 / 240 ms, plus rounding stage | 220 / 320 ms | 1.8 dB |
 
 The release runs in dB. A sustain detector follows the held attenuation with the
 rise and fall times above. Attenuation above the sustain level counts as a
 transient and releases with the fast time. Attenuation below it releases with the
 slow time. A short peak therefore recovers quickly, while dense material keeps a
-steady gain and does not modulate its own waveform. Classic replaces both times
-with a constant-rate recovery and keeps the sustain detector for clipping. Smooth
-and Safe pass the release through a second one-pole stage that rounds the
-recovery corner.
+steady gain and does not modulate its own waveform. All modes pass the release
+through a second one-pole rounding stage that rounds the recovery corner, preventing
+gain kinks and high-frequency spectral splatter. Holds of at least 18–26 ms span
+sub-bass half-cycles down to 25–30 Hz, eliminating intermodulation distortion and
+bass harmonic distortion across all algorithms.
 
 On a mode change, both release stages start from the current attenuation. The
 lookahead and smoothing histories continue, and the averages recompute their sums
@@ -177,7 +178,7 @@ The mode names describe this project's tuning. They are not names of copied publ
 | --- | --- |
 | Attack, hold and smoothing | [Luff's limiter article](https://signalsmith-audio.co.uk/writing/2022/limiter/) describes the moving minimum, the hold extension and cascaded box filters. The per-mode attack alignment through a gain ring and the attack/hold tuning are original. |
 | Modern / Smooth / Aggressive / Safe | [Luff's release-curve discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#release-curve) supplies the exponential-recovery building block and the series cascade used for rounding. The sustain detector that splits transient and sustained attenuation, and all times, are original. The [L4 guide](https://assets.wavescdn.com/pdf/plugins/l4-ultramaximizer.pdf) describes program-adaptive release and clipping as a goal, not a method. |
-| Classic | [Luff's alternative-release discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#alternative-release-curves) motivates other recovery laws. This implementation recovers at a constant 40 dB per second. It is not a published L2 emulation. |
+| Classic | [Luff's alternative-release discussion](https://signalsmith-audio.co.uk/writing/2022/limiter/#alternative-release-curves) motivates opto and legacy recovery laws. This implementation uses an opto-modeled dual-decay recovery with smooth rounding. It is not a published L2 emulation. |
 | Upward and clipping | Original gated amplitude-envelope lift, sustain-scaled clip allowance and quadratic knee, with the equations/ranges documented above. The L4 guide is a workflow reference, not the source of these transfer functions. |
 | True-peak reconstruction | Windowed-sinc FIR construction is explained by Steven W. Smith in [The Scientist and Engineer's Guide to DSP, Chapter 16](https://www.dspguide.com/CH16.PDF). The eight-phase/96-tap detector, gain scheduling and reserve are this project's design and are tested independently. |
 | Oversampling | [JUCE 8.0.9 Oversampling implementation](https://github.com/juce-framework/JUCE/blob/8.0.9/modules/juce_dsp/processors/juce_Oversampling.cpp), using its FIR half-band stages. |
