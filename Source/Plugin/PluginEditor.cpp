@@ -184,7 +184,11 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
         addAndMakeVisible(modes[i]);
     }
     presets.addItemList({"Init / clean start", "Modern master", "Smooth & full", "Push the wall",
-                         "Safe delivery", "Classic weight"},
+                         "Safe delivery", "Classic weight",
+                         "EDM Mainstage Slam", "Tech House Club Punch", "Dubstep Bass Wall",
+                         "Trance Anthem Lift", "Drum & Bass 174 Limiter", "Future Rave Crushed Peak",
+                         "Deep House Warm Glow", "Hardstyle Redline Driver", "Electro House Buzz Clip",
+                         "Bass House Heavy Squeeze", "Trap Festival Sub Boomer", "Melodic Techno Precision"},
                         1);
     presets.setSelectedId(1, juce::dontSendNotification);
     presets.setComponentID("presets");

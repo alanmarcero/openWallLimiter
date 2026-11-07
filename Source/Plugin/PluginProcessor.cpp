@@ -321,6 +321,114 @@ void WallProcessor::applyPreset(int index) {
         set("true_peak", 0);
         set("release", 1.2f);
     }
+    if (index == 6) {
+        set("threshold", -9.0f);
+        set("ceiling", -0.2f);
+        set("mode", 2);
+        set("clip", 45.0f);
+        set("release", 0.5f);
+        set("upward", 1.8f);
+        set("oversampling", 2);
+    }
+    if (index == 7) {
+        set("threshold", -7.5f);
+        set("ceiling", -0.3f);
+        set("mode", 0);
+        set("clip", 25.0f);
+        set("release", 0.8f);
+        set("upward", 1.2f);
+        set("highpass_hz", 28.0f);
+        set("highpass_slope", 1);
+    }
+    if (index == 8) {
+        set("threshold", -10.5f);
+        set("ceiling", -0.1f);
+        set("mode", 2);
+        set("clip", 60.0f);
+        set("release", 0.45f);
+        set("upward", 2.5f);
+        set("stereo_link", 90.0f);
+    }
+    if (index == 9) {
+        set("threshold", -6.5f);
+        set("ceiling", -0.5f);
+        set("mode", 1);
+        set("release", 1.4f);
+        set("upward", 2.0f);
+        set("stereo_link", 80.0f);
+        set("oversampling", 3);
+    }
+    if (index == 10) {
+        set("threshold", -8.5f);
+        set("ceiling", -0.2f);
+        set("mode", 0);
+        set("clip", 35.0f);
+        set("release", 0.6f);
+        set("upward", 1.5f);
+        set("highpass_hz", 30.0f);
+    }
+    if (index == 11) {
+        set("threshold", -9.5f);
+        set("ceiling", -0.15f);
+        set("mode", 2);
+        set("clip", 50.0f);
+        set("release", 0.55f);
+        set("upward", 2.0f);
+    }
+    if (index == 12) {
+        set("threshold", -5.0f);
+        set("ceiling", -0.8f);
+        set("mode", 4);
+        set("release", 1.8f);
+        set("upward", 0.8f);
+        set("lowpass_hz", 19000.0f);
+    }
+    if (index == 13) {
+        set("threshold", -11.0f);
+        set("ceiling", 0.0f);
+        set("mode", 2);
+        set("clip", 75.0f);
+        set("release", 0.35f);
+        set("upward", 3.0f);
+        set("true_peak", 0.0f);
+    }
+    if (index == 14) {
+        set("threshold", -8.0f);
+        set("ceiling", -0.2f);
+        set("mode", 0);
+        set("clip", 55.0f);
+        set("release", 0.7f);
+        set("upward", 1.6f);
+        set("highpass_hz", 25.0f);
+    }
+    if (index == 15) {
+        set("threshold", -9.0f);
+        set("ceiling", -0.3f);
+        set("mode", 2);
+        set("clip", 40.0f);
+        set("release", 0.65f);
+        set("upward", 2.2f);
+        set("stereo_link", 85.0f);
+    }
+    if (index == 16) {
+        set("threshold", -7.0f);
+        set("ceiling", -0.2f);
+        set("mode", 0);
+        set("clip", 30.0f);
+        set("release", 1.1f);
+        set("upward", 1.4f);
+        set("highpass_hz", 20.0f);
+        set("highpass_slope", 0);
+    }
+    if (index == 17) {
+        set("threshold", -6.0f);
+        set("ceiling", -0.5f);
+        set("mode", 3);
+        set("release", 1.3f);
+        set("upward", 1.0f);
+        set("oversampling", 3);
+        set("true_peak", 1.0f);
+    }
 }
 juce::AudioProcessorEditor *WallProcessor::createEditor() {
     return new WallEditor(*this);
