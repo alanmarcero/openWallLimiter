@@ -165,7 +165,8 @@ double Limiter::releaseDb(Channel& channel, double heldDb) const noexcept {
     // The sustained part releases slowly, so the gain does not follow the waveform.
     const auto transient = std::max(0.0, release - std::max(heldDb, channel.sustainDb));
     const auto body = std::max(0.0, std::min(release, channel.sustainDb) - heldDb);
-    const auto adaptive = release - transient * releaseFast_ - body * releaseSlow_;
+    const auto fastCurve = releaseFast_ * (1.0 + 0.05 * std::min(10.0, transient));
+    const auto adaptive = release - transient * fastCurve - body * releaseSlow_;
     release = std::max(heldDb, profile.classicDbPerSecond > 0 ? release - classicStepDb_ : adaptive);
     // Sustain follows the held target, so a release tail does not count as sustained.
     channel.sustainDb += (heldDb - channel.sustainDb)

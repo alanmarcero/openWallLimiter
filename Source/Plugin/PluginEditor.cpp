@@ -354,7 +354,8 @@ void WallEditor::paint(juce::Graphics &g) {
     mark.closeSubPath();
     g.setColour(brass);
     g.fillPath(mark);
-    text(g, "openWallLimiter", {80, 18, 480, 40}, 29, paper);
+    text(g, "openWallLimiter", {80, 14, 250, 32}, 27, paper);
+    text(g, "TRUE PEAK BRICKWALL LIMITER", {82, 44, 280, 18}, 10, brass);
     box(g, {24, 89, 496, 75});
     box(g, {599, 89, 497, 75});
     text(g, "Pre-limiter filters", {24, 171, 220, 18}, 12, paper);
@@ -374,6 +375,14 @@ void WallEditor::paint(juce::Graphics &g) {
         int x = 240 + int(i) * 168;
         text(g, labels[i], {x, 265, 164, 19}, 12, muted);
         text(g, values[i], {x, 286, 164, 28}, 22, i == 0 ? red : paper);
+    }
+    const float tp = wallProcessor.truePeakDb.load();
+    const bool tpClip = tp > 0.0f;
+    g.setColour(tpClip ? red : (tp > -1.0f ? brass : juce::Colour(0xff2d3a33)));
+    g.fillEllipse(886.0f, 292.0f, 8.0f, 8.0f);
+    if (tpClip) {
+        g.setColour(red.withAlpha(0.4f));
+        g.drawEllipse(884.0f, 290.0f, 12.0f, 12.0f, 1.2f);
     }
     drawGraph(g);
     const std::array<const char *, 4> names{"Release", "Clip", "Upward", "Stereo link"};
