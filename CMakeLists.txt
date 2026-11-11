@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(openWallLimiter VERSION 1.4.0 LANGUAGES C CXX)
+project(openWallLimiter VERSION 1.4.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
@@ -26,6 +26,7 @@ if(OWL_BUILD_PLUGIN)
     list(APPEND OWL_FORMATS AU)
   endif()
   juce_add_plugin(openWallLimiter
+    VERSION "${PROJECT_VERSION}"
     COMPANY_NAME "Alan Marcero"
     COMPANY_WEBSITE "https://github.com/alanmarcero/openWallLimiter"
     COPYRIGHT "Copyright (c) 2026 Alan Marcero"
