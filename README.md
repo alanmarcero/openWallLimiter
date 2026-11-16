@@ -10,7 +10,7 @@ A mastering limiter with five characters, pre-limiter high-pass and low-pass fil
 
 1. Set the **High pass** and **Low pass** filters. Their ranges, slopes and defaults match [openMaster](https://github.com/alanmarcero/openMaster): 10–200 Hz and 8–24 kHz, with 12/24/48/72/96 dB/oct Butterworth slopes. Click either filter's button to bypass it. Filters run before input drive and limiting.
 2. Lower **Threshold** to push the mix into limiting, and set **Ceiling** for the output peak level. **Link** moves the two faders together when dragging.
-3. Choose **Modern**, **Smooth**, **Aggressive**, **Safe**, or **Classic**. Adjust **Release**, **Clip**, **Upward**, and **Stereo link** to taste.
+3. Choose **Modern**, **Smooth**, **Aggressive**, **Safe**, or **Classic**. Adjust **Release**, **Clip**, **Upward**, **Transient link**, **Release link**, and **Lookahead** to taste.
 4. Enable **True peak** to add post-downsampling reconstructed-peak protection. Choose oversampling up to 16x. True peak always uses at least 4x, even when the menu is set lower; the footer shows the active factor.
 5. Compare with **Gain match** or audition what changed with **Delta**. Reset the loudness/peak measurement when starting a new pass.
 
@@ -24,7 +24,7 @@ Double-click a knob/fader to restore its default, or type a precise value. Param
 | Safe | Clean under heavy limiting. Full attack, long hold, slow release and no intentional clipping. |
 | Classic | Steady and familiar. The release recovers at a constant 40 dB per second. |
 
-**Upward** lifts quiet, audible material with a gate at very low levels. **Stereo link** blends independent channel detection toward shared gain reduction. The final true-peak guard is fully linked to preserve the stereo image. **Clip** lets transients clip instead of pulling the gain down. Sustained limiting shrinks the allowance, so held notes and bass stay clean. Clip has no effect in Safe mode.
+**Upward** lifts quiet, audible material with a gate at very low levels. **Transient link** blends peak detection across channels before gain reduction; **Release link** blends the channels' recovery envelopes independently, so stereo peaks can stay more independent while their tails remain centered. Both default to 100% to preserve the previous fully linked behavior. The final true-peak guard is fully linked to preserve the stereo image. **Lookahead** caps each mode's transient anticipation from 0 to 5 ms. The host-reported latency remains fixed at 5 ms, so automation does not change plug-in delay compensation. **Clip** lets transients clip instead of pulling the gain down. Sustained limiting shrinks the allowance, so held notes and bass stay clean. Clip has no effect in Safe mode.
 
 The meter panel includes short-term and gated integrated LUFS, maximum estimated true peak, sample input/output peaks, gain reduction and an eight-second history. Short-term LUFS needs three seconds of audio. The gain-reduction readout describes the main limiter envelope, excluding clipping, upward gain and the final true-peak guard. Peak and loudness meters read the selected monitoring output.
 
@@ -48,6 +48,8 @@ The signal path is:
 `high pass → low pass → oversampling → threshold drive/upward → lookahead limiter/clip → downsampling → true-peak guard → dither → monitoring`
 
 The limiter delays audio by 5 ms. Each character's attack uses up to that lookahead. All oversampling paths are padded to one fixed reported latency, with another 128 samples for the final guard. Oversampling changes warm the new path and crossfade for 20 ms. CPU use rises temporarily during that transition. Buffers are allocated in preparation, outside the audio callback.
+
+Lookahead automation changes the effective attack window inside the fixed 5 ms delay. Sessions created before 1.5 load with 5 ms lookahead; their existing `stereo_link` automation remains attached to Transient Link, and Release Link starts at 0% to preserve independent per-channel recovery.
 
 True-peak protection uses an eight-phase, 96-tap windowed-sinc detector **after** downsampling, followed by finite lookahead gain smoothing and a 0.3 dB reconstruction reserve. The main limiter limits to the same reserve, so the guard only removes reconstruction overshoot. Tests independently reconstruct output at 16 phases with 64 taps. Metering uses a separate 4x FIR estimate. These are practical finite-filter estimates, not a guarantee about every possible DAC/reconstruction filter or lossy encoder. Use suitable delivery headroom and check your final encoded master.
 

@@ -4,10 +4,11 @@
 #include <cmath>
 
 namespace {
-constexpr std::array<const char *, 19> ids{
+constexpr std::array<const char *, 21> ids{
     "threshold",      "ceiling",     "mode",       "release",       "clip",      "upward", "stereo_link",
     "oversampling",   "true_peak",   "dither",     "gain_match",    "delta",     "bypass", "highpass_hz",
-    "highpass_slope", "highpass_on", "lowpass_hz", "lowpass_slope", "lowpass_on"};
+    "highpass_slope", "highpass_on", "lowpass_hz", "lowpass_slope", "lowpass_on", "lookahead_ms",
+    "release_link"};
 float db(float x) {
     return juce::Decibels::gainToDecibels(x, -100.f);
 }
@@ -179,6 +180,8 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
     settings.clip = value(4) * .01f;
     settings.upwardDb = value(5);
     settings.stereoLink = value(6) * .01f;
+    settings.lookaheadMs = value(19);
+    settings.releaseLink = value(20) * .01f;
     int requested = std::clamp(int(value(7)), 0, 4);
     if (tp)
         requested = std::max(2, requested);
@@ -264,6 +267,18 @@ void WallProcessor::getStateInformation(juce::MemoryBlock &dest) {
 void WallProcessor::setStateInformation(const void *data, int size) {
     if (auto xml = getXmlFromBinary(data, size); xml && xml->hasTagName(parameters.state.getType())) {
         auto incoming = juce::ValueTree::fromXml(*xml);
+        if (!incoming.getChildWithProperty("id", "lookahead_ms").isValid()) {
+            juce::ValueTree child("PARAM");
+            child.setProperty("id", "lookahead_ms", nullptr);
+            child.setProperty("value", 5.0f, nullptr);
+            incoming.addChild(child, -1, nullptr);
+        }
+        if (!incoming.getChildWithProperty("id", "release_link").isValid()) {
+            juce::ValueTree child("PARAM");
+            child.setProperty("id", "release_link", nullptr);
+            child.setProperty("value", 0.0f, nullptr);
+            incoming.addChild(child, -1, nullptr);
+        }
         for (auto *parameter : getParameters())
             if (auto *p = dynamic_cast<juce::RangedAudioParameter *>(parameter)) {
                 auto child = incoming.getChildWithProperty("id", p->paramID);

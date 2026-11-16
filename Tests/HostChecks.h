@@ -242,8 +242,8 @@ inline juce::Component *find(juce::Component &root, const juce::String &id) {
     return nullptr;
 }
 inline void controls(WallProcessor &p, juce::AudioProcessorEditor &editor) {
-    for (auto id :
-         {"threshold", "ceiling", "release", "clip", "upward", "stereo_link", "highpass_hz", "lowpass_hz"}) {
+    for (auto id : {"threshold", "ceiling", "release", "clip", "upward", "stereo_link", "lookahead_ms",
+                    "release_link", "highpass_hz", "lowpass_hz"}) {
         auto *s = dynamic_cast<juce::Slider *>(find(editor, id));
         require(s, id);
         s->setValue(s->getMinimum() + (s->getMaximum() - s->getMinimum()) * .37, juce::sendNotificationSync);

@@ -124,6 +124,28 @@ void stereo() {
     require(left == mono && right == mono, "dual mono matches mono");
 }
 
+void stereoReleaseLink() {
+    auto renderRight = [](float releaseLink) {
+        wall::Settings settings;
+        settings.mode = wall::Mode::Smooth;
+        settings.ceilingDb = -6;
+        settings.stereoLink = 0;
+        settings.releaseLink = releaseLink;
+        wall::Limiter limiter;
+        limiter.prepare(48000, 2);
+        limiter.setSettings(settings);
+        std::vector<float> left(8000, 0), right(8000, .2f);
+        left[2000] = 4;
+        limiter.process(left.data(), right.data(), static_cast<int>(left.size()));
+        return right;
+    };
+    const auto independent = renderRight(0);
+    const auto linked = renderRight(1);
+    const auto peakOutput = static_cast<std::size_t>(2000 + 240);
+    require(std::abs(independent[peakOutput] - .2f) < 1e-6f, "independent release leaves the quiet channel alone");
+    require(linked[peakOutput] < independent[peakOutput] * .9f, "release link shares the other channel's recovery attenuation");
+}
+
 void silenceInvalidAndAllocation() {
     wall::Limiter limiter;
     limiter.prepare(48000, 2);
@@ -146,6 +168,8 @@ void silenceInvalidAndAllocation() {
     s.clip = -100;
     s.upwardDb = nan;
     s.stereoLink = inf;
+    s.releaseLink = inf;
+    s.lookaheadMs = inf;
     s.mode = static_cast<wall::Mode>(999);
     allocations = 0;
     countAllocations = true;
@@ -229,6 +253,9 @@ void anticipatedGainIsSmooth() {
     for (int i = 1001; i < 1000 + latency; ++i)
         largestStep = std::max(largestStep, std::abs(output[i] - output[i - 1]));
     require(largestStep < .002f, "lookahead gain changes smoothly across anticipation");
+    s.lookaheadMs = 0;
+    const auto noLookahead = render(input, s);
+    require(noLookahead[1000 + latency / 4] > .0999f, "zero lookahead does not pre-attenuate the audio before a transient");
 }
 
 void sustainedBassStaysClean() {
@@ -274,6 +301,8 @@ void lowCeilingAndAutomation() {
         s.release = block % 2 ? .1f : 10;
         s.upwardDb = static_cast<float>(block % 13);
         s.stereoLink = static_cast<float>(block % 5) * .25f;
+        s.releaseLink = static_cast<float>(block % 5) * .25f;
+        s.lookaheadMs = static_cast<float>(block % 6);
         s.clip = static_cast<float>(block % 11) * .1f;
         for (std::size_t i = 0; i < left.size(); ++i) {
             random = random * 1664525u + 1013904223u;
@@ -386,6 +415,7 @@ int main() {
     ceilingAndLatency();
     partitionAndReset();
     stereo();
+    stereoReleaseLink();
     silenceInvalidAndAllocation();
     driveUpwardModesAndRelease();
     anticipatedGainIsSmooth();

@@ -53,7 +53,7 @@ class WallProcessor final : public juce::AudioProcessor {
         float nativeLatency = 0;
     };
     std::array<Path, 5> paths;
-    std::array<std::atomic<float> *, 19> values{};
+    std::array<std::atomic<float> *, 21> values{};
     float value(size_t i) const noexcept { return values[i]->load(std::memory_order_relaxed); }
     void process(juce::AudioBuffer<float> &, bool);
     void processChunk(juce::AudioBuffer<float> &, int, int, bool);

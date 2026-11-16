@@ -23,6 +23,10 @@ int main(int argc, char **argv) {
         set(p, "true_peak", 0);
         p.prepareToPlay(48000, 256);
         require(p.getLatencySamples() > 0, "lookahead latency missing");
+        const int fixedLatency = p.getLatencySamples();
+        set(p, "lookahead_ms", 0.0f);
+        require(p.getLatencySamples() == fixedLatency, "lookahead automation keeps host latency fixed");
+        set(p, "lookahead_ms", 5.0f);
         juce::AudioBuffer<float> b(2, 256);
         juce::MidiBuffer midi;
         for (int j = 0; j < 100; j++) {
@@ -40,6 +44,8 @@ int main(int argc, char **argv) {
         set(p, "highpass_hz", 37);
         set(p, "lowpass_slope", 4);
         set(p, "mode", 3);
+        set(p, "lookahead_ms", 2.5f);
+        set(p, "release_link", 62.0f);
         juce::MemoryBlock state;
         p.getStateInformation(state);
         WallProcessor restored;
@@ -51,10 +57,36 @@ int main(int argc, char **argv) {
                                  restored.parameters.getParameter(identified->paramID)->getValue()) < 1e-6f,
                     "state recall mismatch");
         }
+        require(std::abs(restored.parameters.getRawParameterValue("lookahead_ms")->load() - 2.5f) < .02f,
+                "lookahead state recall");
+        require(std::abs(restored.parameters.getRawParameterValue("release_link")->load() - 62.0f) < .02f,
+                "release link state recall");
+        auto legacy = p.parameters.copyState();
+        for (int i = legacy.getNumChildren() - 1; i >= 0; --i) {
+            auto child = legacy.getChild(i);
+            const auto id = child.getProperty("id").toString();
+            if (id == "lookahead_ms" || id == "release_link")
+                legacy.removeChild(i, nullptr);
+        }
+        juce::MemoryBlock oldState;
+        if (auto xml = legacy.createXml())
+            p.copyXmlToBinary(*xml, oldState);
+        else
+            throw std::runtime_error("legacy state serialization");
+        WallProcessor migrated;
+        migrated.setStateInformation(oldState.getData(), int(oldState.getSize()));
+        require(std::abs(migrated.parameters.getRawParameterValue("lookahead_ms")->load() - 5.0f) < .02f,
+                "legacy state uses full lookahead");
+        require(std::abs(migrated.parameters.getRawParameterValue("release_link")->load()) < .02f,
+                "legacy state keeps independent release envelopes");
         auto editor = std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
         require(editor->getWidth() >= 1000, "editor size");
         checks::controls(p, *editor);
         p.applyPreset(1);
+        require(std::abs(p.parameters.getRawParameterValue("lookahead_ms")->load() - 5.0f) < .02f,
+                "preset restores default lookahead");
+        require(std::abs(p.parameters.getRawParameterValue("release_link")->load() - 100.0f) < .02f,
+                "preset restores default release link");
         juce::File output =
             juce::File::getCurrentWorkingDirectory().getChildFile(argc > 1 ? argv[1] : "docs/screenshots");
         output.createDirectory();
