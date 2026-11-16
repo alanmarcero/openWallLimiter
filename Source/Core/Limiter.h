@@ -16,6 +16,8 @@ struct Settings {
     float clip = 0;
     float upwardDb = 0;
     float stereoLink = 1;
+    float releaseLink = 0;
+    float lookaheadMs = 5;
     Mode mode = Mode::Modern;
 };
 

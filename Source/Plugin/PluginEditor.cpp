@@ -107,7 +107,7 @@ void WallEditor::slider(const char *id, const char *suffix, bool rotary) {
     s->setComponentID(id);
     s->setName(id);
     s->setSliderStyle(rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
-    s->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 110, 25);
+    s->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 96, 25);
     s->setTextValueSuffix(suffix);
     s->setNumDecimalPlacesToDisplay(1);
     s->setDoubleClickReturnValue(true, wallProcessor.parameters.getParameter(id)->convertFrom0to1(
@@ -145,6 +145,8 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     slider("clip", "%", true);
     slider("upward", " dB", true);
     slider("stereo_link", "%", true);
+    slider("lookahead_ms", " ms", true);
+    slider("release_link", "%", true);
     slider("highpass_hz", " Hz", false);
     slider("lowpass_hz", " Hz", false);
     for (auto id : {"highpass_hz", "lowpass_hz"})
@@ -164,6 +166,9 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     buttons["delta"]->setTooltip("Listen to processed output minus the latency-aligned original. This "
                                  "monitoring signal can exceed the output ceiling.");
     buttons["gain_match"]->setTooltip("Remove threshold makeup gain for level-matched comparison.");
+    sliders["stereo_link"]->setTooltip("Transient Link blends peak detection across channels before gain reduction.");
+    sliders["release_link"]->setTooltip("Release Link blends each channel's recovery envelope toward shared recovery.");
+    sliders["lookahead_ms"]->setTooltip("Maximum transient anticipation. Each limiter mode's attack window is capped by this value; host latency stays fixed at 5 ms.");
     const std::array<const char *, 5> hints{
         "2.2 ms attack, 20 ms hold. Transients release faster than sustained limiting.",
         "4.5 ms attack, 24 ms hold, and a rounded release stage for transparent dynamics.",
@@ -273,10 +278,12 @@ void WallEditor::resized() {
     sliders["threshold"]->setBounds(53, 300, 110, 190);
     sliders["ceiling"]->setBounds(959, 300, 110, 190);
     link.setBounds(91, 509, 62, 24);
-    sliders["release"]->setBounds(260, 560, 115, 96);
-    sliders["clip"]->setBounds(430, 560, 115, 96);
-    sliders["upward"]->setBounds(600, 560, 115, 96);
-    sliders["stereo_link"]->setBounds(770, 560, 115, 96);
+    sliders["release"]->setBounds(244, 560, 102, 96);
+    sliders["clip"]->setBounds(350, 560, 102, 96);
+    sliders["upward"]->setBounds(456, 560, 102, 96);
+    sliders["stereo_link"]->setBounds(562, 560, 102, 96);
+    sliders["release_link"]->setBounds(668, 560, 102, 96);
+    sliders["lookahead_ms"]->setBounds(774, 560, 102, 96);
     combos["oversampling"]->setBounds(122, 693, 88, 30);
     buttons["true_peak"]->setBounds(222, 693, 104, 30);
     combos["dither"]->setBounds(398, 693, 138, 30);
@@ -385,13 +392,14 @@ void WallEditor::paint(juce::Graphics &g) {
         g.drawEllipse(884.0f, 290.0f, 12.0f, 12.0f, 1.2f);
     }
     drawGraph(g);
-    const std::array<const char *, 4> names{"Release", "Clip", "Upward", "Stereo link"};
-    const std::array<const char *, 4> desc{"Recovery time", "Transient clip", "Upward gain",
-                                           "Channel link"};
-    for (size_t i = 0; i < 4; ++i) {
-        int x = 250 + int(i) * 170;
-        text(g, names[i], {x, 537, 135, 20}, 14, paper, juce::Justification::centred);
-        text(g, desc[i], {x, 656, 135, 17}, 11, muted, juce::Justification::centred);
+    const std::array<const char *, 6> names{"Release", "Clip", "Upward", "Transient link", "Release link",
+                                            "Lookahead"};
+    const std::array<const char *, 6> desc{"Recovery time", "Transient clip", "Upward gain", "Peak linking",
+                                           "Envelope linking", "Transient anticipation"};
+    for (size_t i = 0; i < names.size(); ++i) {
+        const int x = 244 + int(i) * 106;
+        text(g, names[i], {x, 537, 102, 20}, 13, paper, juce::Justification::centred);
+        text(g, desc[i], {x, 656, 102, 17}, 9, muted, juce::Justification::centred);
     }
     text(g, "Input", {40, 570, 70, 20}, 12, muted);
     text(g, reading(wallProcessor.inputDb.load(), " dB"), {40, 592, 140, 28}, 23, blue);

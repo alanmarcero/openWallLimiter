@@ -122,6 +122,8 @@ void Limiter::setSettings(const Settings& requested) noexcept {
     settings_.clip = bounded(requested.clip, 0, 1, 0);
     settings_.upwardDb = bounded(requested.upwardDb, 0, 12, 0);
     settings_.stereoLink = bounded(requested.stereoLink, 0, 1, 1);
+    settings_.releaseLink = bounded(requested.releaseLink, 0, 1, 0);
+    settings_.lookaheadMs = bounded(requested.lookaheadMs, 0, 5, 5);
     const auto mode = requested.mode >= Mode::Modern && requested.mode <= Mode::Classic
         ? requested.mode : Mode::Modern;
     if (mode != settings_.mode) {
@@ -145,8 +147,9 @@ void Limiter::setSettings(const Settings& requested) noexcept {
     classicStepDb_ = profile.classicDbPerSecond / (sampleRate_ * settings_.release);
     clipDb_ = profile.clipDb * settings_.clip;
     hold_ = static_cast<int>(std::round(sampleRate_ * profile.hold * .001));
-    const auto attack = std::clamp(static_cast<int>(std::round(sampleRate_ * profile.attack * .001)), 1,
-                                   std::max(latency_, 1));
+    const auto profileAttack = static_cast<int>(std::round(sampleRate_ * profile.attack * .001));
+    const auto requestedLookahead = static_cast<int>(std::round(sampleRate_ * settings_.lookaheadMs * .001));
+    const auto attack = std::clamp(std::min(profileAttack, requestedLookahead), 1, std::max(latency_, 1));
     if (attack != attack_ && latency_ > 0) {
         // Two cascaded averages span attack + 1 samples and give an S-shaped gain ramp.
         attack_ = attack;
@@ -227,11 +230,18 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
             target[c] = std::min(1.0, ceiling_ * allowance[c] / std::max(std::abs(input[c]), 1e-30));
         }
         const auto linked = std::min(target[0], target[1]);
+        std::array<double, 2> releaseAmounts{};
         for (int c = 0; c < channelCount_; ++c) {
             auto& channel = channels_[c];
             const auto safeGain = target[c] + settings_.stereoLink * (linked - target[c]);
             const auto held = channel.minimum.push(safeGain, time_, window);
-            const auto envelope = dbGain(-releaseDb(channel, -20 * std::log10(std::max(held, 1e-30))));
+            releaseAmounts[c] = releaseDb(channel, -20 * std::log10(std::max(held, 1e-30)));
+        }
+        const auto sharedRelease = channelCount_ == 2 ? std::max(releaseAmounts[0], releaseAmounts[1]) : releaseAmounts[0];
+        for (int c = 0; c < channelCount_; ++c) {
+            auto& channel = channels_[c];
+            const auto linkedRelease = releaseAmounts[c] + settings_.releaseLink * (sharedRelease - releaseAmounts[c]);
+            const auto envelope = dbGain(-linkedRelease);
             channel.gains[time_ % gainWindow] = channel.second.push(channel.first.push(envelope));
             const auto gain = channel.gains[(time_ + gainWindow - gainDelay) % gainWindow];
             minimumGain = std::min(minimumGain, gain);

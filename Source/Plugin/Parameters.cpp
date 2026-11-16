@@ -20,7 +20,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     number("release", "Release", .1f, 10, .01f, 1, .4f, "x");
     number("clip", "Clip", 0, 100, .1f, 0, 1, "%");
     number("upward", "Upward", 0, 10, .01f, 0, 1, "dB");
-    number("stereo_link", "Stereo Link", 0, 100, .1f, 100, 1, "%");
+    number("stereo_link", "Transient Link", 0, 100, .1f, 100, 1, "%");
     choice("oversampling", "Oversampling", {"Off", "2x", "4x", "8x", "16x"}, 2);
     boolean("true_peak", "True Peak", true);
     choice("dither", "Dither", {"Off", "24-bit TPDF", "16-bit TPDF"}, 0);
@@ -33,6 +33,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     number("lowpass_hz", "Low Pass Frequency", 8000, 24000, 10, 20000, 1, "Hz");
     choice("lowpass_slope", "Low Pass Slope", slopeNames, 3);
     boolean("lowpass_on", "Low Pass", true);
+    number("lookahead_ms", "Lookahead", 0, 5, .01f, 5, 1, "ms");
+    number("release_link", "Release Link", 0, 100, .1f, 100, 1, "%");
     return layout;
 }
 } // namespace wall

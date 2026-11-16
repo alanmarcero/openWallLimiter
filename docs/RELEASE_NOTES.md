@@ -1,3 +1,11 @@
+# openWallLimiter 1.5.0
+
+- Added adjustable 0–5 ms lookahead without changing the fixed host latency.
+- Renamed Stereo Link to Transient Link while retaining its automation ID and behavior.
+- Added independent Release Link control for stereo recovery envelopes.
+- Older sessions load with 5 ms lookahead and independent release envelopes.
+- Added slider, DSP, state migration, and native editor screenshot checks.
+
 # openWallLimiter 1.1.4
 
 Substantial sound quality improvements across all five limiter algorithms:
