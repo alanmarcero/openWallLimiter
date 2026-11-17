@@ -1,3 +1,9 @@
+# openWallLimiter 1.5.1
+
+- Updated the editor with the suite's graphite, mint, and amber palette.
+- Enlarged controls and clarified preset navigation and button labels for easier use.
+- Rebalanced the native editor and refreshed its screenshot.
+
 # openWallLimiter 1.5.0
 
 - Added adjustable 0–5 ms lookahead without changing the fixed host latency.
