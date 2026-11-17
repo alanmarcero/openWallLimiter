@@ -4,6 +4,7 @@
 class WallLook final : public juce::LookAndFeel_V4 {
   public:
     WallLook();
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
     void drawRotarySlider(juce::Graphics &, int, int, int, int, float, float, float, juce::Slider &) override;
     void drawLinearSlider(juce::Graphics &, int, int, int, int, float, float, float,
                           juce::Slider::SliderStyle, juce::Slider &) override;
@@ -36,7 +37,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     std::vector<std::unique_ptr<ButtonAttachment>> buttonAttachments;
     std::array<juce::TextButton, 5> modes;
     juce::ComboBox presets;
-    juce::TextButton prevPreset{"<"}, nextPreset{">"};
+    juce::TextButton prevPreset{"Previous"}, nextPreset{"Next"};
     juce::TextButton reset{"Reset meters"}, link{"Link"};
     juce::TooltipWindow tooltip{this, 650};
     std::array<float, 240> inputHistory{}, outputHistory{}, reductionHistory{};
