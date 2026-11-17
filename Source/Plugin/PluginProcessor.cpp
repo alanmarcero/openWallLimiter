@@ -30,6 +30,7 @@ bool WallProcessor::isBusesLayoutSupported(const BusesLayout &l) const {
            l.getMainInputChannelSet() == l.getMainOutputChannelSet();
 }
 void WallProcessor::prepareToPlay(double sr, int block) {
+    artworkClock.reset();
     ready = false;
     sr = std::isfinite(sr) ? std::clamp(sr, 8000., 192000.) : 48000.;
     preparedRate = sr;
@@ -118,6 +119,9 @@ void WallProcessor::processBlockBypassed(juce::AudioBuffer<float> &b, juce::Midi
 }
 void WallProcessor::process(juce::AudioBuffer<float> &b, bool hostBypass) {
     juce::ScopedNoDenormals noDenormals;
+    auto* playHead = getPlayHead();
+    artworkClock.update(playHead ? playHead->getPosition() : juce::Optional<juce::AudioPlayHead::PositionInfo>{},
+                        b.getNumSamples(), preparedRate);
     if (!ready || b.getNumChannels() < channels) {
         b.clear();
         return;

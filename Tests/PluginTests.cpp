@@ -81,6 +81,40 @@ int main(int argc, char **argv) {
                 "legacy state keeps independent release envelopes");
         auto editor = std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
         require(editor->getWidth() >= 1000, "editor size");
+        struct Host : juce::AudioPlayHead {
+            PositionInfo position;
+            juce::Optional<PositionInfo> getPosition() const override { return position; }
+        } host;
+        p.setPlayHead(&host);
+        juce::AudioBuffer<float> clockAudio(2, 256);
+        juce::MidiBuffer clockMidi;
+        clockAudio.clear();
+        host.position.setIsPlaying(true);
+        host.position.setBpm(140.0);
+        host.position.setPpqPosition(-1.75);
+        p.processBlock(clockAudio, clockMidi);
+        require(std::abs(p.artworkPhase() - 0.25f) < 0.0001f, "SVG follows a negative host position");
+        const auto onbeat = editor->createComponentSnapshot(juce::Rectangle<int>(17, 8, 58, 58));
+        host.position.setPpqPosition(22.875);
+        p.processBlock(clockAudio, clockMidi);
+        require(std::abs(p.artworkPhase() - 0.875f) < 0.0001f, "SVG follows a host seek");
+        const auto offbeat = editor->createComponentSnapshot(juce::Rectangle<int>(17, 8, 58, 58));
+        int changed = 0;
+        for (int y = 0; y < onbeat.getHeight(); ++y)
+            for (int x = 0; x < onbeat.getWidth(); ++x)
+                if (onbeat.getPixelAt(x, y) != offbeat.getPixelAt(x, y)) ++changed;
+        require(changed > 30, "Native SVG pixels move with beat phase");
+        host.position.setIsPlaying(false);
+        host.position.setPpqPosition(0);
+        p.processBlock(clockAudio, clockMidi);
+        require(std::abs(p.artworkPhase() - 0.875f) < 0.0001f, "SVG holds phase when the host stops");
+        p.setPlayHead(nullptr);
+        p.processBlock(clockAudio, clockMidi);
+        p.processBlock(clockAudio, clockMidi);
+        require(p.artworkPhase() > 0.875f, "SVG advances on audio time without host transport");
+        for (auto* control : editor->getChildren())
+            if (dynamic_cast<juce::Button*>(control) || dynamic_cast<juce::ComboBox*>(control))
+                require(control->getHeight() >= 40 && control->getWidth() >= 40, "action target is smaller than 40 px");
         checks::controls(p, *editor);
         p.applyPreset(1);
         require(std::abs(p.parameters.getRawParameterValue("lookahead_ms")->load() - 5.0f) < .02f,

@@ -1,4 +1,5 @@
 #pragma once
+#include "ArtworkBeatClock.h"
 #include "Limiter.h"
 #include "LoudnessMeter.h"
 #include "MultiPoleFilter.h"
@@ -40,6 +41,7 @@ class WallProcessor final : public juce::AudioProcessor {
     juce::AudioProcessorValueTreeState parameters;
     std::atomic<float> inputDb{-100}, outputDb{-100}, reductionDb{0}, shortLufs{-100}, integratedLufs{-100},
         truePeakDb{-100};
+    float artworkPhase() const noexcept { return artworkClock.currentPhase(); }
     std::atomic<int> effectiveFactor{4};
 
   private:
@@ -70,6 +72,7 @@ class WallProcessor final : public juce::AudioProcessor {
     std::atomic<bool> meterReset{false};
     int channels = 2, chunkSize = 512, latency = 0, currentPath = 2, nextPath = -1, warmup = 0, fade = 0,
         fadeLength = 960;
+    ArtworkBeatClock artworkClock;
     double preparedRate = 48000;
     bool ready = false;
     uint32_t randomState = 0x91a5c3u;

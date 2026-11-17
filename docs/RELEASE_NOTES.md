@@ -1,3 +1,9 @@
+# openWallLimiter 1.6.0
+
+The new fortress emblem follows host quarter notes. Larger controls, a clearer Link levels switch and dark tooltips make the limiter easier to operate while watching the meters.
+
+![openWallLimiter native editor](https://raw.githubusercontent.com/alanmarcero/openWallLimiter/v1.6.0/docs/screenshots/openWallLimiter.png)
+
 # openWallLimiter 1.5.1
 
 - Updated the editor with the suite's graphite, mint, and amber palette.
