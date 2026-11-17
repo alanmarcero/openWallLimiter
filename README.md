@@ -6,6 +6,8 @@ A mastering limiter for controlling peaks and loudness at the end of a mix.
 
 [Download the latest release](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
+The fortress mark pulses on quarter notes from the DAW transport, including after tempo changes or seeks. It holds when playback stops. Hosts without transport use an audio-sample clock.
+
 ## Controls
 
 - **High pass and Low pass:** Filter audio before limiting. High pass covers 10–200 Hz; Low pass covers 8–24 kHz. Choose 12, 24, 48, 72, or 96 dB-per-octave slopes, or bypass either filter.

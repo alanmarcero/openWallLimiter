@@ -29,6 +29,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     WallProcessor &wallProcessor;
     WallLook look;
     juce::Image fortress;
+    std::unique_ptr<juce::Drawable> ceilingMark;
     std::map<juce::String, std::unique_ptr<juce::Slider>> sliders;
     std::map<juce::String, std::unique_ptr<juce::ComboBox>> combos;
     std::map<juce::String, std::unique_ptr<juce::TextButton>> buttons;
@@ -38,7 +39,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     std::array<juce::TextButton, 5> modes;
     juce::ComboBox presets;
     juce::TextButton prevPreset{"Previous"}, nextPreset{"Next"};
-    juce::TextButton reset{"Reset meters"}, link{"Link"};
+    juce::TextButton reset{"Reset meters"}, link{"Link levels"};
     juce::TooltipWindow tooltip{this, 650};
     std::array<float, 240> inputHistory{}, outputHistory{}, reductionHistory{};
     int cursor = 0;

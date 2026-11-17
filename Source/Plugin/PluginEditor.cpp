@@ -37,8 +37,9 @@ WallLook::WallLook() {
     setColour(juce::PopupMenu::highlightedTextColourId, ink);
     setColour(juce::TextButton::textColourOffId, muted);
     setColour(juce::TextButton::textColourOnId, ink);
-    setColour(juce::TooltipWindow::backgroundColourId, paper);
-    setColour(juce::TooltipWindow::textColourId, ink);
+    setColour(juce::TooltipWindow::backgroundColourId, ink);
+    setColour(juce::TooltipWindow::textColourId, paper);
+    setColour(juce::TooltipWindow::outlineColourId, brass);
 }
 juce::Font WallLook::getTextButtonFont(juce::TextButton&, int) { return font(14, true); }
 void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const juce::Colour &, bool hover,
@@ -136,6 +137,7 @@ void WallEditor::toggle(const char *id, const char *label) {
 }
 WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcessor(p) {
     setLookAndFeel(&look);
+    ceilingMark = juce::Drawable::createFromImageData(BinaryData::ceilingmeter_svg, BinaryData::ceilingmeter_svgSize);
     fortress = juce::ImageCache::getFromMemory(BinaryData::fortress_png, BinaryData::fortress_pngSize);
     inputHistory.fill(-60);
     outputHistory.fill(-60);
@@ -265,33 +267,33 @@ void WallEditor::timerCallback() {
     repaint();
 }
 void WallEditor::resized() {
-    prevPreset.setBounds(790, 18, 78, 38);
-    presets.setBounds(872, 18, 164, 38);
-    nextPreset.setBounds(1040, 18, 58, 38);
-    buttons["highpass_on"]->setBounds(40, 101, 104, 36);
+    prevPreset.setBounds(790, 18, 78, 40);
+    presets.setBounds(872, 18, 164, 40);
+    nextPreset.setBounds(1040, 18, 58, 40);
+    buttons["highpass_on"]->setBounds(40, 101, 104, 40);
     sliders["highpass_hz"]->setBounds(152, 94, 202, 58);
-    combos["highpass_slope"]->setBounds(368, 101, 136, 36);
-    buttons["lowpass_on"]->setBounds(615, 101, 104, 36);
+    combos["highpass_slope"]->setBounds(368, 101, 136, 40);
+    buttons["lowpass_on"]->setBounds(615, 101, 104, 40);
     sliders["lowpass_hz"]->setBounds(727, 94, 202, 58);
-    combos["lowpass_slope"]->setBounds(940, 101, 136, 36);
+    combos["lowpass_slope"]->setBounds(940, 101, 136, 40);
     for (size_t i = 0; i < modes.size(); ++i)
-        modes[i].setBounds(240 + int(i) * 132, 201, 124, 36);
+        modes[i].setBounds(240 + int(i) * 132, 201, 124, 40);
     sliders["threshold"]->setBounds(53, 300, 110, 190);
     sliders["ceiling"]->setBounds(959, 300, 110, 190);
-    link.setBounds(84, 505, 76, 36);
+    link.setBounds(62, 502, 98, 40);
     sliders["release"]->setBounds(244, 560, 102, 96);
     sliders["clip"]->setBounds(350, 560, 102, 96);
     sliders["upward"]->setBounds(456, 560, 102, 96);
     sliders["stereo_link"]->setBounds(562, 560, 102, 96);
     sliders["release_link"]->setBounds(668, 560, 102, 96);
     sliders["lookahead_ms"]->setBounds(774, 560, 102, 96);
-    combos["oversampling"]->setBounds(122, 691, 88, 36);
-    buttons["true_peak"]->setBounds(222, 691, 104, 36);
-    combos["dither"]->setBounds(398, 691, 138, 36);
-    buttons["gain_match"]->setBounds(640, 691, 115, 36);
-    buttons["delta"]->setBounds(765, 691, 75, 36);
-    buttons["bypass"]->setBounds(850, 691, 84, 36);
-    reset.setBounds(949, 691, 143, 36);
+    combos["oversampling"]->setBounds(122, 691, 88, 40);
+    buttons["true_peak"]->setBounds(222, 691, 104, 40);
+    combos["dither"]->setBounds(398, 691, 138, 40);
+    buttons["gain_match"]->setBounds(640, 691, 115, 40);
+    buttons["delta"]->setBounds(765, 691, 75, 40);
+    buttons["bypass"]->setBounds(850, 691, 84, 40);
+    reset.setBounds(949, 691, 143, 40);
 }
 void WallEditor::drawGraph(juce::Graphics &g) {
     juce::Rectangle<float> r{240, 323, 640, 173};
@@ -345,23 +347,13 @@ void WallEditor::paint(juce::Graphics &g) {
     g.fillRect(0, 0, getWidth(), 73);
     g.setColour(brass.withAlpha(.3f));
     g.drawHorizontalLine(72, 0, float(getWidth()));
-    // The crenellated mark echoes the limiter's flat ceiling.
-    juce::Path mark;
-    mark.startNewSubPath(27, 45);
-    mark.lineTo(27, 27);
-    mark.lineTo(34, 27);
-    mark.lineTo(34, 33);
-    mark.lineTo(42, 33);
-    mark.lineTo(42, 23);
-    mark.lineTo(50, 23);
-    mark.lineTo(50, 33);
-    mark.lineTo(58, 33);
-    mark.lineTo(58, 27);
-    mark.lineTo(65, 27);
-    mark.lineTo(65, 45);
-    mark.closeSubPath();
-    g.setColour(brass);
-    g.fillPath(mark);
+    if (ceilingMark) {
+        const float decay = 1.0f - wallProcessor.artworkPhase();
+        const float pulse = decay * decay;
+        const float size = 42.0f + 9.0f * pulse;
+        const auto bounds = juce::Rectangle<float>(size, size).withCentre({46.0f, 36.0f});
+        ceilingMark->drawWithin(g, bounds, juce::RectanglePlacement::centred, 0.76f + 0.24f * pulse);
+    }
     text(g, "openWallLimiter", {80, 14, 250, 32}, 27, paper);
     text(g, "TRUE PEAK BRICKWALL LIMITER", {82, 44, 280, 18}, 10, brass);
     box(g, {24, 89, 496, 75});
