@@ -2,8 +2,8 @@
 #include "BinaryData.h"
 #include <cmath>
 namespace {
-const juce::Colour ink{0xff131617}, panel{0xff1b1f20}, brass{0xffd2ad70}, paper{0xffe9e3d7},
-    muted{0xff9da39f}, blue{0xff78b7bf}, red{0xffe88d70};
+const juce::Colour ink{0xff0d1317}, panel{0xff152026}, brass{0xffffbe3b}, paper{0xffe6f0f5},
+    muted{0xff869ca8}, blue{0xff48f0c8}, red{0xffef7353};
 juce::Font font(float size, bool bold = false) {
     return juce::Font(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain));
 }
@@ -40,6 +40,7 @@ WallLook::WallLook() {
     setColour(juce::TooltipWindow::backgroundColourId, paper);
     setColour(juce::TooltipWindow::textColourId, ink);
 }
+juce::Font WallLook::getTextButtonFont(juce::TextButton&, int) { return font(14, true); }
 void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const juce::Colour &, bool hover,
                                     bool down) {
     const bool on = b.getToggleState();
@@ -197,7 +198,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
                         1);
     presets.setSelectedId(1, juce::dontSendNotification);
     presets.setComponentID("presets");
-    presets.setTooltip("Choose a factory limiter preset or cycle through with < and >.");
+    presets.setTooltip("Choose a factory limiter preset. Use Previous or Next to cycle through presets.");
     presets.onChange = [this] { wallProcessor.applyPreset(presets.getSelectedItemIndex()); };
     addAndMakeVisible(presets);
     prevPreset.setComponentID("prev_preset");
@@ -264,33 +265,33 @@ void WallEditor::timerCallback() {
     repaint();
 }
 void WallEditor::resized() {
-    prevPreset.setBounds(825, 22, 28, 32);
-    presets.setBounds(857, 22, 203, 32);
-    nextPreset.setBounds(1064, 22, 28, 32);
-    buttons["highpass_on"]->setBounds(40, 105, 104, 29);
+    prevPreset.setBounds(790, 18, 78, 38);
+    presets.setBounds(872, 18, 164, 38);
+    nextPreset.setBounds(1040, 18, 58, 38);
+    buttons["highpass_on"]->setBounds(40, 101, 104, 36);
     sliders["highpass_hz"]->setBounds(152, 94, 202, 58);
-    combos["highpass_slope"]->setBounds(368, 105, 136, 29);
-    buttons["lowpass_on"]->setBounds(615, 105, 104, 29);
+    combos["highpass_slope"]->setBounds(368, 101, 136, 36);
+    buttons["lowpass_on"]->setBounds(615, 101, 104, 36);
     sliders["lowpass_hz"]->setBounds(727, 94, 202, 58);
-    combos["lowpass_slope"]->setBounds(940, 105, 136, 29);
+    combos["lowpass_slope"]->setBounds(940, 101, 136, 36);
     for (size_t i = 0; i < modes.size(); ++i)
-        modes[i].setBounds(240 + int(i) * 132, 201, 124, 35);
+        modes[i].setBounds(240 + int(i) * 132, 201, 124, 36);
     sliders["threshold"]->setBounds(53, 300, 110, 190);
     sliders["ceiling"]->setBounds(959, 300, 110, 190);
-    link.setBounds(91, 509, 62, 24);
+    link.setBounds(84, 505, 76, 36);
     sliders["release"]->setBounds(244, 560, 102, 96);
     sliders["clip"]->setBounds(350, 560, 102, 96);
     sliders["upward"]->setBounds(456, 560, 102, 96);
     sliders["stereo_link"]->setBounds(562, 560, 102, 96);
     sliders["release_link"]->setBounds(668, 560, 102, 96);
     sliders["lookahead_ms"]->setBounds(774, 560, 102, 96);
-    combos["oversampling"]->setBounds(122, 693, 88, 30);
-    buttons["true_peak"]->setBounds(222, 693, 104, 30);
-    combos["dither"]->setBounds(398, 693, 138, 30);
-    buttons["gain_match"]->setBounds(640, 693, 115, 30);
-    buttons["delta"]->setBounds(765, 693, 75, 30);
-    buttons["bypass"]->setBounds(850, 693, 84, 30);
-    reset.setBounds(949, 693, 143, 30);
+    combos["oversampling"]->setBounds(122, 691, 88, 36);
+    buttons["true_peak"]->setBounds(222, 691, 104, 36);
+    combos["dither"]->setBounds(398, 691, 138, 36);
+    buttons["gain_match"]->setBounds(640, 691, 115, 36);
+    buttons["delta"]->setBounds(765, 691, 75, 36);
+    buttons["bypass"]->setBounds(850, 691, 84, 36);
+    reset.setBounds(949, 691, 143, 36);
 }
 void WallEditor::drawGraph(juce::Graphics &g) {
     juce::Rectangle<float> r{240, 323, 640, 173};

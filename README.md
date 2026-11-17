@@ -2,7 +2,7 @@
 
 A mastering limiter with five characters, pre-limiter high-pass and low-pass filters, and true-peak protection.
 
-![openWallLimiter](docs/screenshots/openWallLimiter.png)
+![openWallLimiter native editor with graphite surfaces, mint metering, and amber controls (v1.5.1)](docs/screenshots/openWallLimiter.png)
 
 [Download VST3 / AU](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
