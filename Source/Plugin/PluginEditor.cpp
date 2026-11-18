@@ -270,7 +270,10 @@ void WallEditor::timerCallback() {
     const int active = int(wallProcessor.parameters.getRawParameterValue("mode")->load());
     for (size_t i = 0; i < modes.size(); ++i)
         modes[i].setToggleState(int(i) == active, juce::dontSendNotification);
-    repaint();
+    repaint(200, 260, 700, 265);
+    repaint(40, 590, 140, 32);
+    repaint(948, 590, 140, 32);
+    repaint(20, 10, 56, 56);
 }
 void WallEditor::resized() {
     prevPreset.setBounds(790, 18, 78, 40);

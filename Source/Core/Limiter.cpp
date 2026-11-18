@@ -207,6 +207,7 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
     const auto gainDelay = static_cast<std::uint64_t>(latency_ - attack_);
     double minimumGain = 1;
     started_ = true;
+    const bool hasClip = std::abs(clipDb_) > 1e-6;
     for (int i = 0; i < samples; ++i) {
         drive_ += driveSlew_ * (driveTarget_ - drive_);
         std::array<double, 2> input{clean(left[i]) * drive_,
@@ -226,7 +227,7 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
         std::array<double, 2> allowance, target;
         for (int c = 0; c < 2; ++c) {
             const auto sustainDb = channels_[c].sustainDb;
-            allowance[c] = dbGain(clipDb_ / (1 + sustainDb * sustainDb));
+            allowance[c] = hasClip ? dbGain(clipDb_ / (1 + sustainDb * sustainDb)) : 1.0;
             target[c] = std::min(1.0, ceiling_ * allowance[c] / std::max(std::abs(input[c]), 1e-30));
         }
         const auto linked = std::min(target[0], target[1]);
@@ -235,13 +236,17 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
             auto& channel = channels_[c];
             const auto safeGain = target[c] + settings_.stereoLink * (linked - target[c]);
             const auto held = channel.minimum.push(safeGain, time_, window);
-            releaseAmounts[c] = releaseDb(channel, -20 * std::log10(std::max(held, 1e-30)));
+            if (held >= 1.0 && channel.releaseDb <= 0.0 && channel.roundDb <= 0.0 && channel.sustainDb <= 0.0) {
+                releaseAmounts[c] = 0.0;
+            } else {
+                releaseAmounts[c] = releaseDb(channel, -20 * std::log10(std::max(held, 1e-30)));
+            }
         }
         const auto sharedRelease = channelCount_ == 2 ? std::max(releaseAmounts[0], releaseAmounts[1]) : releaseAmounts[0];
         for (int c = 0; c < channelCount_; ++c) {
             auto& channel = channels_[c];
             const auto linkedRelease = releaseAmounts[c] + settings_.releaseLink * (sharedRelease - releaseAmounts[c]);
-            const auto envelope = dbGain(-linkedRelease);
+            const auto envelope = linkedRelease <= 0.0 ? 1.0 : dbGain(-linkedRelease);
             channel.gains[time_ % gainWindow] = channel.second.push(channel.first.push(envelope));
             const auto gain = channel.gains[(time_ + gainWindow - gainDelay) % gainWindow];
             minimumGain = std::min(minimumGain, gain);
@@ -253,7 +258,8 @@ void Limiter::process(float* left, float* right, int samples) noexcept {
             if (c == 0) left[i] = output;
             else if (right) right[i] = output;
         }
-        position_ = (position_ + 1) % static_cast<std::size_t>(latency_);
+        if (++position_ == static_cast<std::size_t>(latency_))
+            position_ = 0;
         ++time_;
     }
     reductionDb_ = static_cast<float>(-20 * std::log10(std::max(minimumGain, 1e-12)));
