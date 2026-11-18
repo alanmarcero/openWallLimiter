@@ -46,6 +46,9 @@ int main(int argc, char **argv) {
         set(p, "mode", 3);
         set(p, "lookahead_ms", 2.5f);
         set(p, "release_link", 62.0f);
+        set(p, "input_gain", 3.5f);
+        set(p, "stereo_width", 125.0f);
+        set(p, "tone_tilt", 2.0f);
         juce::MemoryBlock state;
         p.getStateInformation(state);
         WallProcessor restored;
@@ -61,11 +64,17 @@ int main(int argc, char **argv) {
                 "lookahead state recall");
         require(std::abs(restored.parameters.getRawParameterValue("release_link")->load() - 62.0f) < .02f,
                 "release link state recall");
+        require(std::abs(restored.parameters.getRawParameterValue("input_gain")->load() - 3.5f) < .02f,
+                "input gain state recall");
+        require(std::abs(restored.parameters.getRawParameterValue("stereo_width")->load() - 125.0f) < .02f,
+                "stereo width state recall");
+        require(std::abs(restored.parameters.getRawParameterValue("tone_tilt")->load() - 2.0f) < .02f,
+                "tone tilt state recall");
         auto legacy = p.parameters.copyState();
         for (int i = legacy.getNumChildren() - 1; i >= 0; --i) {
             auto child = legacy.getChild(i);
             const auto id = child.getProperty("id").toString();
-            if (id == "lookahead_ms" || id == "release_link")
+            if (id == "lookahead_ms" || id == "release_link" || id == "input_gain" || id == "stereo_width" || id == "tone_tilt")
                 legacy.removeChild(i, nullptr);
         }
         juce::MemoryBlock oldState;
@@ -79,6 +88,12 @@ int main(int argc, char **argv) {
                 "legacy state uses full lookahead");
         require(std::abs(migrated.parameters.getRawParameterValue("release_link")->load()) < .02f,
                 "legacy state keeps independent release envelopes");
+        require(std::abs(migrated.parameters.getRawParameterValue("input_gain")->load()) < .02f,
+                "legacy state defaults input gain to 0 dB");
+        require(std::abs(migrated.parameters.getRawParameterValue("stereo_width")->load() - 100.0f) < .02f,
+                "legacy state defaults stereo width to 100%");
+        require(std::abs(migrated.parameters.getRawParameterValue("tone_tilt")->load()) < .02f,
+                "legacy state defaults tone tilt to 0 dB");
         auto editor = std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
         require(editor->getWidth() >= 1000, "editor size");
         struct Host : juce::AudioPlayHead {

@@ -35,6 +35,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     boolean("lowpass_on", "Low Pass", true);
     number("lookahead_ms", "Lookahead", 0, 5, .01f, 5, 1, "ms");
     number("release_link", "Release Link", 0, 100, .1f, 100, 1, "%");
+    number("input_gain", "Input Drive", -12, 12, .1f, 0, 1, "dB");
+    number("stereo_width", "Stereo Width", 0, 200, .5f, 100, 1, "%");
+    number("tone_tilt", "Spectral Tilt", -6, 6, .1f, 0, 1, "dB");
     return layout;
 }
 } // namespace wall
