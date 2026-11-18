@@ -2,7 +2,7 @@
 
 A mastering limiter for controlling peaks and loudness at the end of a mix.
 
-![openWallLimiter limiter editor](docs/screenshots/openWallLimiter.png)
+![openWallLimiter limiter editor](docs/screenshots/preview.png)
 
 [Download the latest release](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
