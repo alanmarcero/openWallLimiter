@@ -131,6 +131,9 @@ int main(int argc, char **argv) {
             if (dynamic_cast<juce::Button*>(control) || dynamic_cast<juce::ComboBox*>(control))
                 require(control->getHeight() >= 40 && control->getWidth() >= 40, "action target is smaller than 40 px");
         checks::controls(p, *editor);
+        auto *presetsBox = dynamic_cast<juce::ComboBox *>(editor->findChildWithID("presets"));
+        require(presetsBox != nullptr && presetsBox->getNumItems() == 48, "expected 48 factory presets");
+        require(presetsBox->getRootMenu()->getNumItems() == 7, "expected 7 dance-style preset submenus");
         p.applyPreset(1);
         require(std::abs(p.parameters.getRawParameterValue("lookahead_ms")->load() - 5.0f) < .02f,
                 "preset restores default lookahead");
