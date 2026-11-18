@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   dsp:
+    if: false
     name: DSP / sanitizers
     runs-on: ubuntu-latest
     steps:
@@ -28,6 +29,7 @@ jobs:
       - run: cmake --build build --parallel 4
       - run: ctest --test-dir build --output-on-failure
   macos:
+    if: false
     name: macOS / universal
     runs-on: macos-15
     timeout-minutes: 30

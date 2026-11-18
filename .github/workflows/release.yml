@@ -46,4 +46,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          WALL_RELEASE_PACKAGES: openWallLimiter-Windows-x64.zip
         run: python3 scripts/publish_release.py
