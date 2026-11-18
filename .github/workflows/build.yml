@@ -104,3 +104,37 @@ jobs:
         with:
           name: screenshots-Windows
           path: build/screenshots/*.png
+      - name: Upload preview screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-screenshot
+          path: build/screenshots/openWallLimiter.png
+          if-no-files-found: error
+
+  update-preview:
+    # Refreshes docs/screenshots/preview.png (the image OpenVST Manager shows) from the
+    # real editor capture whenever UI-affecting files change on main.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: preview-screenshot
+          path: preview
+      - name: Commit refreshed preview if changed
+        run: |
+          git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -qE '^(Source|assets|Tools|tools|Tests)/' || { echo "No UI changes; keeping preview."; exit 0; }
+          mkdir -p docs/screenshots
+          cp "preview/openWallLimiter.png" docs/screenshots/preview.png
+          if git diff --quiet -- docs/screenshots/preview.png; then echo "Preview unchanged."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots/preview.png
+          git commit -m "docs: refresh preview screenshot [skip ci]"
+          git push
