@@ -166,6 +166,16 @@ class PublishReleaseTests(unittest.TestCase):
         self.create_status = 1
         self.assert_rejected_without_mutation()
 
+    def test_windows_only_release_package_env_override(self):
+        self.api_status = 404
+        (self.dist / 'openWallLimiter-macOS-universal.zip').unlink()
+        self.package_names = ['openWallLimiter-Windows-x64.zip']
+        self.write_checksums(self.dist)
+        with patch.dict('os.environ', {'WALL_RELEASE_PACKAGES': 'openWallLimiter-Windows-x64.zip'}):
+            self.publish()
+        self.assertEqual({p.name: p.read_bytes() for p in self.created.iterdir()},
+                         {p.name: p.read_bytes() for p in self.dist.iterdir()})
+
 
 if __name__ == '__main__':
     unittest.main()

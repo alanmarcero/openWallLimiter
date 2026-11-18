@@ -10,20 +10,27 @@ from urllib.parse import quote
 import zipfile
 
 PACKAGES = ('openWallLimiter-macOS-universal.zip', 'openWallLimiter-Windows-x64.zip')
-ASSETS = (*PACKAGES, 'SHA256SUMS.txt')
 
 
-def validate_packages(directory, repository, revision):
+def expected_packages():
+    configured = os.environ.get('WALL_RELEASE_PACKAGES', '').strip()
+    if not configured:
+        return PACKAGES
+    return tuple(name.strip() for name in configured.split(',') if name.strip())
+
+
+def validate_packages(directory, repository, revision, packages=None):
+    expected = tuple(packages) if packages is not None else expected_packages()
     checksums = {}
     for line in (directory / 'SHA256SUMS.txt').read_text().splitlines():
         match = re.fullmatch(r'([a-fA-F0-9]{64}) [ *](.+)', line)
-        if not match or match[2] not in PACKAGES or match[2] in checksums:
+        if not match or match[2] not in expected or match[2] in checksums:
             raise ValueError('Invalid or duplicate entry in SHA256SUMS.txt')
         checksums[match[2]] = match[1].lower()
-    if set(checksums) != set(PACKAGES):
-        raise ValueError('SHA256SUMS.txt must cover both release packages')
+    if set(checksums) != set(expected):
+        raise ValueError('SHA256SUMS.txt must cover all expected release packages')
     source = f'Plugin source and build instructions: https://github.com/{repository}/tree/{revision}'
-    for name in PACKAGES:
+    for name in expected:
         path = directory / name
         if hashlib.sha256(path.read_bytes()).hexdigest() != checksums[name]:
             raise ValueError(f'Checksum mismatch: {name}')
@@ -37,6 +44,8 @@ def validate_packages(directory, repository, revision):
 def publish(tag, repository, source_directory, dist):
     if not tag.startswith('v'):
         raise ValueError('Release tag must start with v')
+    packages = expected_packages()
+    assets = (*packages, 'SHA256SUMS.txt')
     revision = subprocess.check_output(
         ['git', '-C', str(source_directory), 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}'],
         text=True).strip()
@@ -52,14 +61,14 @@ def publish(tag, repository, source_directory, dist):
     if result.returncode:
         if str(release.get('status')) != '404':
             raise RuntimeError(f'Release lookup failed: {result.stderr.strip()}')
-        validate_packages(dist, repository, revision)
+        validate_packages(dist, repository, revision, packages)
         # The tag already exists and matches this checkout. Do not pass the
         # commit SHA as --target. The Releases API then requires workflows:write
         # when that commit's workflow tree differs from the default branch, and
         # GITHUB_TOKEN cannot be granted that scope (HTTP 403, run 41108883571).
         # --verify-tag binds the release to the existing tag.
         subprocess.run([
-            'gh', 'release', 'create', tag, *(str(dist / name) for name in ASSETS),
+            'gh', 'release', 'create', tag, *(str(dist / name) for name in assets),
             '--repo', repository, '--verify-tag',
             '--notes-file', str(source_directory / 'docs/RELEASE_NOTES.md'),
             '--title', f'openWallLimiter {tag}',
@@ -69,15 +78,15 @@ def publish(tag, repository, source_directory, dist):
     if release['tag_name'] != tag or release['draft'] or not release['published_at']:
         raise ValueError('Existing release must be published for the requested tag')
     uploaded = {asset['name'] for asset in release['assets'] if asset['state'] == 'uploaded'}
-    if not set(ASSETS).issubset(uploaded):
+    if not set(assets).issubset(uploaded):
         raise ValueError('Existing release is incomplete; refusing to replace published assets')
     with tempfile.TemporaryDirectory() as temporary:
         command = ['gh', 'release', 'download', tag, '--repo', repository, '--dir', temporary]
-        for name in ASSETS:
+        for name in assets:
             command.extend(['--pattern', name])
         subprocess.run(command, check=True)
         # Rebuilt ZIPs can differ; the published manifest authenticates the published bytes.
-        validate_packages(Path(temporary), repository, revision)
+        validate_packages(Path(temporary), repository, revision, packages)
     print(f'Existing release {tag} has valid packages for {revision}; preserved all assets.')
 
 
