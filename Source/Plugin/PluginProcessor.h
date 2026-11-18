@@ -9,6 +9,13 @@
 #include <atomic>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
+#include <utility>
+#include <vector>
+
+struct WallPreset {
+    const char *name;
+    std::vector<std::pair<const char *, float>> overrides;
+};
 
 class WallProcessor final : public juce::AudioProcessor {
   public:
@@ -38,6 +45,7 @@ class WallProcessor final : public juce::AudioProcessor {
     void setStateInformation(const void *, int) override;
     void resetMeters() noexcept { meterReset.store(true); }
     void applyPreset(int index);
+    static const std::vector<WallPreset> &factoryPresets();
     juce::AudioProcessorValueTreeState parameters;
     std::atomic<float> inputDb{-100}, outputDb{-100}, reductionDb{0}, shortLufs{-100}, integratedLufs{-100},
         truePeakDb{-100};

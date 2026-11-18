@@ -1,6 +1,8 @@
 #include "PluginEditor.h"
 #include "BinaryData.h"
+#include <algorithm>
 #include <cmath>
+#include <vector>
 namespace {
 const juce::Colour ink{0xff0d1317}, panel{0xff152026}, brass{0xffffbe3b}, paper{0xffe6f0f5},
     muted{0xff869ca8}, blue{0xff48f0c8}, red{0xffef7353};
@@ -197,13 +199,23 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
         };
         addAndMakeVisible(modes[i]);
     }
-    presets.addItemList({"Init / clean start", "Modern master", "Smooth & full", "Push the wall",
-                         "Safe delivery", "Classic weight",
-                         "EDM Mainstage Slam", "Tech House Club Punch", "Dubstep Bass Wall",
-                         "Trance Anthem Lift", "Drum & Bass 174 Limiter", "Future Rave Crushed Peak",
-                         "Deep House Warm Glow", "Hardstyle Redline Driver", "Electro House Buzz Clip",
-                         "Bass House Heavy Squeeze", "Trap Festival Sub Boomer", "Melodic Techno Precision"},
-                        1);
+    std::vector<juce::String> presetGroups;
+    std::vector<juce::PopupMenu> presetMenus;
+    std::ranges::for_each(WallProcessor::factoryPresets(), [&, id = 1](const WallPreset &preset) mutable {
+        const juce::String full(preset.name);
+        const auto group = full.upToFirstOccurrenceOf(" / ", false, false);
+        const auto it = std::ranges::find(presetGroups, group);
+        const auto idx = static_cast<size_t>(std::distance(presetGroups.begin(), it));
+        if (it == presetGroups.end()) {
+            presetGroups.push_back(group);
+            presetMenus.emplace_back();
+        }
+        presetMenus[idx].addItem(id++, full);
+    });
+    auto *rootMenu = presets.getRootMenu();
+    std::ranges::for_each(presetGroups, [&, i = size_t{0}](const juce::String &group) mutable {
+        rootMenu->addSubMenu(group, presetMenus[i++]);
+    });
     presets.setSelectedId(1, juce::dontSendNotification);
     presets.setComponentID("presets");
     presets.setTooltip("Choose a factory limiter preset. Use Previous or Next to cycle through presets.");
@@ -276,8 +288,8 @@ void WallEditor::timerCallback() {
     repaint(20, 10, 56, 56);
 }
 void WallEditor::resized() {
-    prevPreset.setBounds(790, 18, 78, 40);
-    presets.setBounds(872, 18, 164, 40);
+    prevPreset.setBounds(686, 18, 78, 40);
+    presets.setBounds(768, 18, 268, 40);
     nextPreset.setBounds(1040, 18, 58, 40);
     buttons["highpass_on"]->setBounds(40, 101, 104, 40);
     sliders["highpass_hz"]->setBounds(152, 94, 202, 58);

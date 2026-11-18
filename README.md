@@ -12,7 +12,7 @@ The fortress mark pulses on quarter notes from the DAW transport, including afte
 
 - **High pass and Low pass:** Filter audio before limiting. High pass covers 10–200 Hz; Low pass covers 8–24 kHz. Choose 12, 24, 48, 72, or 96 dB-per-octave slopes, or bypass either filter.
 - **Threshold and Ceiling:** Set limiting and maximum output level. Link the controls to move them together.
-- **Styles:** Choose Modern, Smooth, Aggressive, Safe, or Classic. Factory presets provide starting points.
+- **Styles:** Choose Modern, Smooth, Aggressive, Safe, or Classic. 48 factory presets organized across seven dance genres (12 Uplifting plus 6 each in Rolling, Progressive, Psy, Tech, Bass & Breaks, and Classic) provide starting points.
 - **Release, Clip, and Upward:** Set recovery time, allow transient clipping, and lift quiet audio.
 - **Transient Link and Release Link:** Set how much the channels share peak detection and limiter recovery.
 - **Lookahead:** Set transient anticipation from 0 to 5 ms. Reported latency stays fixed at 5 ms.

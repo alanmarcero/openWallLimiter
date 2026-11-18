@@ -332,154 +332,234 @@ void WallProcessor::setStateInformation(const void *data, int size) {
         parameters.replaceState(incoming);
     }
 }
-void WallProcessor::applyPreset(int index) {
-    const auto set = [&](const char *id, float v) {
-        auto *p = parameters.getParameter(id);
-        p->beginChangeGesture();
-        p->setValueNotifyingHost(p->convertTo0to1(v));
-        p->endChangeGesture();
+const std::vector<WallPreset> &WallProcessor::factoryPresets() {
+    static const std::vector<WallPreset> list{
+        // Uplifting (12) — index 1 keeps default lookahead_ms=5.0 and release_link=100.0 for unit tests
+        {"Uplifting / Init Clean", {}},
+        {"Uplifting / Anthem Master", {
+            {"threshold", -6.5f}, {"ceiling", -0.3f}, {"mode", 1}, {"release", 1.35f},
+            {"upward", 1.8f}, {"stereo_link", 85.0f}, {"oversampling", 3}
+        }},
+        {"Uplifting / Pure 138 Lift", {
+            {"threshold", -7.5f}, {"ceiling", -0.3f}, {"mode", 1}, {"release", 1.2f},
+            {"clip", 15.0f}, {"upward", 2.2f}, {"highpass_hz", 26.0f}, {"stereo_link", 84.0f},
+            {"stereo_width", 106.0f}, {"tone_tilt", 0.4f}, {"oversampling", 3}
+        }},
+        {"Uplifting / Vocal Air Master", {
+            {"threshold", -6.0f}, {"ceiling", -0.5f}, {"mode", 1}, {"release", 1.5f},
+            {"upward", 1.6f}, {"stereo_link", 88.0f}, {"tone_tilt", 0.6f}, {"lowpass_hz", 21000.0f},
+            {"oversampling", 3}
+        }},
+        {"Uplifting / Euphoria Wall", {
+            {"threshold", -8.8f}, {"ceiling", -0.2f}, {"mode", 0}, {"release", 0.8f},
+            {"clip", 30.0f}, {"upward", 2.4f}, {"highpass_hz", 28.0f}, {"stereo_width", 108.0f},
+            {"oversampling", 2}
+        }},
+        {"Uplifting / Supersaw Wide", {
+            {"threshold", -7.8f}, {"ceiling", -0.25f}, {"mode", 1}, {"release", 1.1f},
+            {"upward", 2.0f}, {"stereo_link", 78.0f}, {"release_link", 75.0f}, {"stereo_width", 112.0f},
+            {"oversampling", 3}
+        }},
+        {"Uplifting / Skyline Loudness", {
+            {"threshold", -9.2f}, {"ceiling", -0.15f}, {"mode", 0}, {"release", 0.65f},
+            {"clip", 40.0f}, {"upward", 2.2f}, {"input_gain", 1.2f}, {"highpass_hz", 30.0f},
+            {"oversampling", 3}
+        }},
+        {"Uplifting / Safe Streaming", {
+            {"threshold", -4.5f}, {"ceiling", -1.0f}, {"mode", 3}, {"release", 1.4f},
+            {"upward", 1.0f}, {"oversampling", 3}
+        }},
+        {"Uplifting / Arena Breakdown", {
+            {"threshold", -5.2f}, {"ceiling", -0.5f}, {"mode", 1}, {"release", 1.8f},
+            {"upward", 2.6f}, {"stereo_width", 110.0f}, {"tone_tilt", -0.3f}, {"oversampling", 3}
+        }},
+        {"Uplifting / Pluck Transient", {
+            {"threshold", -6.8f}, {"ceiling", -0.4f}, {"mode", 0}, {"release", 0.9f},
+            {"clip", 20.0f}, {"upward", 1.2f}, {"lookahead_ms", 3.5f}, {"highpass_hz", 25.0f},
+            {"oversampling", 2}
+        }},
+        {"Uplifting / Morning Energy", {
+            {"threshold", -7.2f}, {"ceiling", -0.3f}, {"mode", 1}, {"release", 1.25f},
+            {"upward", 1.7f}, {"tone_tilt", 0.5f}, {"stereo_link", 82.0f}, {"oversampling", 3}
+        }},
+        {"Uplifting / High Headroom Club", {
+            {"threshold", -5.8f}, {"ceiling", -0.6f}, {"mode", 3}, {"release", 1.2f},
+            {"upward", 1.3f}, {"highpass_hz", 26.0f}, {"oversampling", 3}
+        }},
+
+        // Rolling (6)
+        {"Rolling / Club Punch", {
+            {"threshold", -7.5f}, {"ceiling", -0.3f}, {"mode", 0}, {"clip", 25.0f},
+            {"release", 0.8f}, {"upward", 1.2f}, {"highpass_hz", 28.0f}, {"highpass_slope", 1}
+        }},
+        {"Rolling / House Bus Glue", {
+            {"threshold", -6.2f}, {"ceiling", -0.35f}, {"mode", 0}, {"clip", 18.0f},
+            {"release", 0.95f}, {"upward", 1.0f}, {"stereo_link", 92.0f}, {"release_link", 85.0f}
+        }},
+        {"Rolling / Tight Kick Guard", {
+            {"threshold", -8.0f}, {"ceiling", -0.2f}, {"mode", 0}, {"clip", 32.0f},
+            {"release", 0.6f}, {"lookahead_ms", 2.5f}, {"highpass_hz", 30.0f}, {"highpass_slope", 2}
+        }},
+        {"Rolling / Groove Ceiling", {
+            {"threshold", -6.8f}, {"ceiling", -0.4f}, {"mode", 1}, {"release", 0.85f},
+            {"upward", 1.5f}, {"stereo_link", 88.0f}, {"oversampling", 2}
+        }},
+        {"Rolling / Funky Top Sheen", {
+            {"threshold", -7.0f}, {"ceiling", -0.3f}, {"mode", 0}, {"clip", 20.0f},
+            {"release", 0.75f}, {"tone_tilt", 0.7f}, {"stereo_width", 104.0f}
+        }},
+        {"Rolling / Night Drive", {
+            {"threshold", -8.4f}, {"ceiling", -0.25f}, {"mode", 2}, {"clip", 36.0f},
+            {"release", 0.65f}, {"upward", 1.4f}, {"highpass_hz", 27.0f}
+        }},
+
+        // Progressive (6)
+        {"Progressive / Deep Warm Glow", {
+            {"threshold", -5.0f}, {"ceiling", -0.8f}, {"mode", 4}, {"release", 1.8f},
+            {"upward", 0.8f}, {"lowpass_hz", 19000.0f}
+        }},
+        {"Progressive / Smooth & Full", {
+            {"threshold", -6.0f}, {"ceiling", -1.0f}, {"mode", 1}, {"release", 1.6f},
+            {"upward", 1.5f}
+        }},
+        {"Progressive / Melodic Precision", {
+            {"threshold", -6.0f}, {"ceiling", -0.5f}, {"mode", 3}, {"release", 1.3f},
+            {"upward", 1.0f}, {"oversampling", 3}, {"true_peak", 1.0f}
+        }},
+        {"Progressive / Sunset Master", {
+            {"threshold", -5.5f}, {"ceiling", -0.6f}, {"mode", 1}, {"release", 1.5f},
+            {"upward", 1.2f}, {"stereo_width", 108.0f}, {"tone_tilt", -0.2f}, {"oversampling", 3}
+        }},
+        {"Progressive / Safe Delivery", {
+            {"threshold", -3.0f}, {"ceiling", -1.2f}, {"mode", 3}, {"oversampling", 3}
+        }},
+        {"Progressive / Organic Detail", {
+            {"threshold", -4.8f}, {"ceiling", -0.7f}, {"mode", 3}, {"release", 1.7f},
+            {"lookahead_ms", 4.5f}, {"lowpass_hz", 20500.0f}, {"oversampling", 3}
+        }},
+
+        // Psy (6)
+        {"Psy / 140 Kinetic Peak", {
+            {"threshold", -9.0f}, {"ceiling", -0.2f}, {"mode", 0}, {"clip", 40.0f},
+            {"release", 0.48f}, {"upward", 1.6f}, {"lookahead_ms", 2.0f}, {"highpass_hz", 30.0f},
+            {"oversampling", 3}
+        }},
+        {"Psy / Laser Fast Recovery", {
+            {"threshold", -8.5f}, {"ceiling", -0.2f}, {"mode", 2}, {"clip", 48.0f},
+            {"release", 0.35f}, {"stereo_link", 82.0f}, {"tone_tilt", 0.5f}, {"oversampling", 3}
+        }},
+        {"Psy / Crisp Triplet Wall", {
+            {"threshold", -9.5f}, {"ceiling", -0.15f}, {"mode", 2}, {"clip", 52.0f},
+            {"release", 0.42f}, {"upward", 2.1f}, {"highpass_hz", 32.0f}, {"highpass_slope", 2}
+        }},
+        {"Psy / Sub Lock Limiter", {
+            {"threshold", -8.2f}, {"ceiling", -0.3f}, {"mode", 0}, {"clip", 30.0f},
+            {"release", 0.55f}, {"stereo_link", 95.0f}, {"release_link", 95.0f}, {"highpass_hz", 28.0f}
+        }},
+        {"Psy / Fullon Loudness", {
+            {"threshold", -10.0f}, {"ceiling", -0.15f}, {"mode", 2}, {"clip", 58.0f},
+            {"release", 0.40f}, {"upward", 2.4f}, {"input_gain", 1.5f}, {"oversampling", 3}
+        }},
+        {"Psy / Twilight Punch", {
+            {"threshold", -8.8f}, {"ceiling", -0.2f}, {"mode", 0}, {"clip", 42.0f},
+            {"release", 0.50f}, {"tone_tilt", -0.4f}, {"lookahead_ms", 1.8f}
+        }},
+
+        // Tech (6)
+        {"Tech / Future Rave Crush", {
+            {"threshold", -9.5f}, {"ceiling", -0.15f}, {"mode", 2}, {"clip", 50.0f},
+            {"release", 0.55f}, {"upward", 2.0f}
+        }},
+        {"Tech / Mainstage Slam", {
+            {"threshold", -9.0f}, {"ceiling", -0.2f}, {"mode", 2}, {"clip", 45.0f},
+            {"release", 0.5f}, {"upward", 1.8f}, {"oversampling", 2}
+        }},
+        {"Tech / Hardstyle Redline", {
+            {"threshold", -11.0f}, {"ceiling", 0.0f}, {"mode", 2}, {"clip", 75.0f},
+            {"release", 0.35f}, {"upward", 3.0f}, {"true_peak", 0.0f}
+        }},
+        {"Tech / Electro Buzz Clip", {
+            {"threshold", -8.0f}, {"ceiling", -0.2f}, {"mode", 0}, {"clip", 55.0f},
+            {"release", 0.7f}, {"upward", 1.6f}, {"highpass_hz", 25.0f}
+        }},
+        {"Tech / Push the Wall", {
+            {"threshold", -8.0f}, {"mode", 2}, {"clip", 40.0f}, {"release", 0.65f}
+        }},
+        {"Tech / Warehouse Dark", {
+            {"threshold", -9.2f}, {"ceiling", -0.2f}, {"mode", 2}, {"clip", 48.0f},
+            {"release", 0.58f}, {"tone_tilt", -0.8f}, {"highpass_hz", 28.0f}, {"highpass_slope", 2}
+        }},
+
+        // Bass & Breaks (6)
+        {"Bass & Breaks / Dubstep Wall", {
+            {"threshold", -10.5f}, {"ceiling", -0.1f}, {"mode", 2}, {"clip", 60.0f},
+            {"release", 0.45f}, {"upward", 2.5f}, {"stereo_link", 90.0f}
+        }},
+        {"Bass & Breaks / DnB 174", {
+            {"threshold", -8.5f}, {"ceiling", -0.2f}, {"mode", 0}, {"clip", 35.0f},
+            {"release", 0.6f}, {"upward", 1.5f}, {"highpass_hz", 30.0f}
+        }},
+        {"Bass & Breaks / Heavy Squeeze", {
+            {"threshold", -9.0f}, {"ceiling", -0.3f}, {"mode", 2}, {"clip", 40.0f},
+            {"release", 0.65f}, {"upward", 2.2f}, {"stereo_link", 85.0f}
+        }},
+        {"Bass & Breaks / Sub Boomer", {
+            {"threshold", -7.0f}, {"ceiling", -0.2f}, {"mode", 0}, {"clip", 30.0f},
+            {"release", 1.1f}, {"upward", 1.4f}, {"highpass_hz", 20.0f}, {"highpass_slope", 0}
+        }},
+        {"Bass & Breaks / Jungle Snap", {
+            {"threshold", -7.8f}, {"ceiling", -0.3f}, {"mode", 0}, {"clip", 28.0f},
+            {"release", 0.52f}, {"lookahead_ms", 2.0f}, {"highpass_hz", 28.0f}, {"stereo_width", 106.0f}
+        }},
+        {"Bass & Breaks / Neuro Smash", {
+            {"threshold", -10.2f}, {"ceiling", -0.1f}, {"mode", 2}, {"clip", 65.0f},
+            {"release", 0.42f}, {"upward", 2.6f}, {"input_gain", 1.0f}, {"oversampling", 3}
+        }},
+
+        // Classic (6)
+        {"Classic / Modern Master", {
+            {"threshold", -4.0f}, {"mode", 0}
+        }},
+        {"Classic / Classic Weight", {
+            {"threshold", -5.0f}, {"mode", 4}, {"true_peak", 0.0f}, {"release", 1.2f}
+        }},
+        {"Classic / Warm Vinyl Cut", {
+            {"threshold", -4.5f}, {"ceiling", -0.7f}, {"mode", 4}, {"release", 1.5f},
+            {"lowpass_hz", 17500.0f}, {"highpass_hz", 30.0f}, {"tone_tilt", -0.5f}
+        }},
+        {"Classic / Broadcast Calm", {
+            {"threshold", -3.5f}, {"ceiling", -1.0f}, {"mode", 3}, {"release", 1.6f},
+            {"stereo_link", 100.0f}, {"oversampling", 3}
+        }},
+        {"Classic / CD Era Peak", {
+            {"threshold", -6.5f}, {"ceiling", -0.2f}, {"mode", 4}, {"clip", 18.0f},
+            {"release", 0.9f}, {"true_peak", 0.0f}
+        }},
+        {"Classic / Transparent Bus", {
+            {"threshold", -3.8f}, {"ceiling", -0.5f}, {"mode", 1}, {"release", 1.3f},
+            {"upward", 0.6f}, {"oversampling", 3}
+        }}
     };
-    for (auto *p : getParameters()) {
-        p->beginChangeGesture();
-        p->setValueNotifyingHost(p->getDefaultValue());
-        p->endChangeGesture();
-    }
-    if (index == 1) {
-        set("threshold", -4);
-        set("mode", 0);
-    }
-    if (index == 2) {
-        set("threshold", -6);
-        set("mode", 1);
-        set("release", 1.6f);
-        set("upward", 1.5f);
-    }
-    if (index == 3) {
-        set("threshold", -8);
-        set("mode", 2);
-        set("clip", 40);
-        set("release", .65f);
-    }
-    if (index == 4) {
-        set("threshold", -3);
-        set("mode", 3);
-        set("ceiling", -1.2f);
-        set("oversampling", 3);
-    }
-    if (index == 5) {
-        set("threshold", -5);
-        set("mode", 4);
-        set("true_peak", 0);
-        set("release", 1.2f);
-    }
-    if (index == 6) {
-        set("threshold", -9.0f);
-        set("ceiling", -0.2f);
-        set("mode", 2);
-        set("clip", 45.0f);
-        set("release", 0.5f);
-        set("upward", 1.8f);
-        set("oversampling", 2);
-    }
-    if (index == 7) {
-        set("threshold", -7.5f);
-        set("ceiling", -0.3f);
-        set("mode", 0);
-        set("clip", 25.0f);
-        set("release", 0.8f);
-        set("upward", 1.2f);
-        set("highpass_hz", 28.0f);
-        set("highpass_slope", 1);
-    }
-    if (index == 8) {
-        set("threshold", -10.5f);
-        set("ceiling", -0.1f);
-        set("mode", 2);
-        set("clip", 60.0f);
-        set("release", 0.45f);
-        set("upward", 2.5f);
-        set("stereo_link", 90.0f);
-    }
-    if (index == 9) {
-        set("threshold", -6.5f);
-        set("ceiling", -0.5f);
-        set("mode", 1);
-        set("release", 1.4f);
-        set("upward", 2.0f);
-        set("stereo_link", 80.0f);
-        set("oversampling", 3);
-    }
-    if (index == 10) {
-        set("threshold", -8.5f);
-        set("ceiling", -0.2f);
-        set("mode", 0);
-        set("clip", 35.0f);
-        set("release", 0.6f);
-        set("upward", 1.5f);
-        set("highpass_hz", 30.0f);
-    }
-    if (index == 11) {
-        set("threshold", -9.5f);
-        set("ceiling", -0.15f);
-        set("mode", 2);
-        set("clip", 50.0f);
-        set("release", 0.55f);
-        set("upward", 2.0f);
-    }
-    if (index == 12) {
-        set("threshold", -5.0f);
-        set("ceiling", -0.8f);
-        set("mode", 4);
-        set("release", 1.8f);
-        set("upward", 0.8f);
-        set("lowpass_hz", 19000.0f);
-    }
-    if (index == 13) {
-        set("threshold", -11.0f);
-        set("ceiling", 0.0f);
-        set("mode", 2);
-        set("clip", 75.0f);
-        set("release", 0.35f);
-        set("upward", 3.0f);
-        set("true_peak", 0.0f);
-    }
-    if (index == 14) {
-        set("threshold", -8.0f);
-        set("ceiling", -0.2f);
-        set("mode", 0);
-        set("clip", 55.0f);
-        set("release", 0.7f);
-        set("upward", 1.6f);
-        set("highpass_hz", 25.0f);
-    }
-    if (index == 15) {
-        set("threshold", -9.0f);
-        set("ceiling", -0.3f);
-        set("mode", 2);
-        set("clip", 40.0f);
-        set("release", 0.65f);
-        set("upward", 2.2f);
-        set("stereo_link", 85.0f);
-    }
-    if (index == 16) {
-        set("threshold", -7.0f);
-        set("ceiling", -0.2f);
-        set("mode", 0);
-        set("clip", 30.0f);
-        set("release", 1.1f);
-        set("upward", 1.4f);
-        set("highpass_hz", 20.0f);
-        set("highpass_slope", 0);
-    }
-    if (index == 17) {
-        set("threshold", -6.0f);
-        set("ceiling", -0.5f);
-        set("mode", 3);
-        set("release", 1.3f);
-        set("upward", 1.0f);
-        set("oversampling", 3);
-        set("true_peak", 1.0f);
-    }
+    return list;
+}
+
+void WallProcessor::applyPreset(int index) {
+    const auto &presets = factoryPresets();
+    if (index < 0 || index >= static_cast<int>(presets.size()))
+        return;
+    std::ranges::for_each(getParameters(), [](juce::AudioProcessorParameter *parameter) {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->getDefaultValue());
+        parameter->endChangeGesture();
+    });
+    std::ranges::for_each(presets[static_cast<size_t>(index)].overrides, [this](const auto &entry) {
+        auto *parameter = parameters.getParameter(entry.first);
+        if (parameter == nullptr)
+            return;
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(entry.second));
+        parameter->endChangeGesture();
+    });
 }
 juce::AudioProcessorEditor *WallProcessor::createEditor() {
     return new WallEditor(*this);
