@@ -35,6 +35,7 @@ class TruePeakGuard {
         targets.fill(1);
         gains.fill(1);
         position = targetPosition = gainPosition = 0;
+        recentHotSamples = activeTargetSamples = 0;
         sum = 64;
         envelope = 1;
     }
@@ -42,27 +43,44 @@ class TruePeakGuard {
         const std::array<float, 2> delayed{audio[0][size_t(position)], audio[1][size_t(position)]};
         audio[0][size_t(position)] = left;
         audio[1][size_t(position)] = right;
+        if (!enabled) {
+            left = delayed[0];
+            right = delayed[1];
+            position = (position + 1) & (delaySamples - 1);
+            return;
+        }
         double peak = std::max(std::abs(left), std::abs(right));
-        for (size_t channel = 0; channel < 2; ++channel)
-            for (const auto &kernel : kernels) {
-                double v = 0;
-                for (int k = 0; k < 96; ++k)
-                    v += kernel[size_t(k)] *
-                         audio[channel][size_t((position - k + delaySamples) % delaySamples)];
-                peak = std::max(peak, std::abs(v));
-            }
+        if (peak >= double(ceiling) * 0.30 || recentHotSamples > 0) {
+            if (peak >= double(ceiling) * 0.30)
+                recentHotSamples = 96;
+            else
+                --recentHotSamples;
+            for (size_t channel = 0; channel < 2; ++channel)
+                for (size_t phase = 1; phase < 8; ++phase) {
+                    const auto &kernel = kernels[phase];
+                    double v = 0;
+                    for (int k = 0; k < 96; ++k)
+                        v += kernel[size_t(k)] *
+                             audio[channel][size_t((position - k + delaySamples) & (delaySamples - 1))];
+                    peak = std::max(peak, std::abs(v));
+                }
+        }
         const double target = std::min(1., double(ceiling) * reserve / std::max(peak, 1e-20));
         targets[size_t(targetPosition)] = target;
         targetPosition = (targetPosition + 1) % int(targets.size());
-        const double held = *std::min_element(targets.begin(), targets.end());
+        if (target < 1.0)
+            activeTargetSamples = int(targets.size());
+        else if (activeTargetSamples > 0)
+            --activeTargetSamples;
+        const double held = activeTargetSamples > 0 ? *std::min_element(targets.begin(), targets.end()) : 1.0;
         envelope = std::min(held, envelope + release * (held - envelope));
         sum += envelope - gains[size_t(gainPosition)];
         gains[size_t(gainPosition)] = envelope;
-        gainPosition = (gainPosition + 1) % 64;
-        const float gain = enabled ? float(std::clamp(sum / 64., 0., 1.)) : 1.f;
+        gainPosition = (gainPosition + 1) & 63;
+        const float gain = float(std::clamp(sum / 64., 0., 1.));
         left = delayed[0] * gain;
         right = delayed[1] * gain;
-        position = (position + 1) % delaySamples;
+        position = (position + 1) & (delaySamples - 1);
     }
 
   private:
@@ -71,6 +89,7 @@ class TruePeakGuard {
     std::array<double, 192> targets{};
     std::array<double, 64> gains{};
     int position = 0, targetPosition = 0, gainPosition = 0;
+    int recentHotSamples = 0, activeTargetSamples = 0;
     double sum = 64, envelope = 1, release = .0004;
 };
 } // namespace wall
