@@ -55,7 +55,7 @@ class WallProcessor final : public juce::AudioProcessor {
         float nativeLatency = 0;
     };
     std::array<Path, 5> paths;
-    std::array<std::atomic<float> *, 21> values{};
+    std::array<std::atomic<float> *, 24> values{};
     float value(size_t i) const noexcept { return values[i]->load(std::memory_order_relaxed); }
     void process(juce::AudioBuffer<float> &, bool);
     void processChunk(juce::AudioBuffer<float> &, int, int, bool);
@@ -69,6 +69,7 @@ class WallProcessor final : public juce::AudioProcessor {
     Delay dryDelay;
     wall::TruePeakGuard peakGuard;
     juce::SmoothedValue<float> bypassMix, matchGain, deltaMix;
+    std::array<float, 2> tiltState{0.0f, 0.0f};
     std::atomic<bool> meterReset{false};
     int channels = 2, chunkSize = 512, latency = 0, currentPath = 2, nextPath = -1, warmup = 0, fade = 0,
         fadeLength = 960;

@@ -4,11 +4,11 @@
 #include <cmath>
 
 namespace {
-constexpr std::array<const char *, 21> ids{
+constexpr std::array<const char *, 24> ids{
     "threshold",      "ceiling",     "mode",       "release",       "clip",      "upward", "stereo_link",
     "oversampling",   "true_peak",   "dither",     "gain_match",    "delta",     "bypass", "highpass_hz",
     "highpass_slope", "highpass_on", "lowpass_hz", "lowpass_slope", "lowpass_on", "lookahead_ms",
-    "release_link"};
+    "release_link",   "input_gain",  "stereo_width", "tone_tilt"};
 float db(float x) {
     return juce::Decibels::gainToDecibels(x, -100.f);
 }
@@ -99,6 +99,7 @@ void WallProcessor::reset() {
     }
     for (auto &f : filters)
         f.reset();
+    tiltState = {0.0f, 0.0f};
     dryDelay.reset();
     peakGuard.reset();
     if (peakMeter)
@@ -175,6 +176,37 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
     filters[1].setBypassed(value(18) < .5f);
     for (auto &f : filters)
         f.processBlock(input.getArrayOfWritePointers(), channels, n);
+    const float inputGain = juce::Decibels::decibelsToGain(value(21));
+    const float widthScale = value(22) * .01f;
+    const float tiltDb = value(23);
+    const float tiltAlpha = float(1.0 - std::exp(-2.0 * 3.141592653589793 * 1200.0 / preparedRate));
+    const float tiltHighGain = juce::Decibels::decibelsToGain(tiltDb * .5f);
+    const float tiltLowGain = juce::Decibels::decibelsToGain(-tiltDb * .5f);
+    if (std::abs(inputGain - 1.f) > 1e-5f || std::abs(widthScale - 1.f) > 1e-5f || std::abs(tiltDb) > 1e-3f) {
+        for (int i = 0; i < n; ++i) {
+            float l = input.getSample(0, i) * inputGain;
+            float r = channels > 1 ? input.getSample(1, i) * inputGain : l;
+            if (std::abs(tiltDb) > 1e-3f) {
+                tiltState[0] += tiltAlpha * (l - tiltState[0]);
+                l = tiltState[0] * tiltLowGain + (l - tiltState[0]) * tiltHighGain;
+                if (channels > 1) {
+                    tiltState[1] += tiltAlpha * (r - tiltState[1]);
+                    r = tiltState[1] * tiltLowGain + (r - tiltState[1]) * tiltHighGain;
+                } else {
+                    r = l;
+                }
+            }
+            if (channels > 1 && std::abs(widthScale - 1.f) > 1e-5f) {
+                const float mid = .5f * (l + r);
+                const float side = .5f * (l - r) * widthScale;
+                l = mid + side;
+                r = mid - side;
+            }
+            input.setSample(0, i, l);
+            if (channels > 1)
+                input.setSample(1, i, r);
+        }
+    }
     const bool tp = value(8) > .5f;
     wall::Settings settings;
     settings.thresholdDb = value(0);
