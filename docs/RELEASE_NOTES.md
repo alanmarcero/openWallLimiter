@@ -1,3 +1,17 @@
+# openWallLimiter 1.8.0
+
+Organizes 48 factory presets across seven dance music styles (12 Uplifting plus 6 each in Rolling, Progressive, Psy, Tech, Bass & Breaks, and Classic) and updates the editor preset layout.
+
+![openWallLimiter native editor](https://raw.githubusercontent.com/alanmarcero/openWallLimiter/main/docs/screenshots/preview.png)
+
+# openWallLimiter 1.7.1
+
+Skips idle oversampling FIR passes when oversampling is inactive and repaints meters using dirty rects for lower CPU usage.
+
+# openWallLimiter 1.7.0
+
+Adds Pre-Limiter Input Drive, Stereo Width, and Spectral Tilt controls with standardized suite UI layout and an updated native editor screenshot.
+
 # openWallLimiter 1.6.0
 
 The new fortress emblem follows host quarter notes. Larger controls, a clearer Link levels switch and dark tooltips make the limiter easier to operate while watching the meters.
