@@ -12,6 +12,12 @@ permissions:
   contents: read
 jobs:
   build:
+    # build.yml's update-preview job requests contents: write. GitHub checks
+    # that request before any job starts, even when the job's if would skip it
+    # on a tag. The workflow-level contents: read is not enough (startup_failure
+    # on run 44575275811). The preview job still runs only for pushes to main.
+    permissions:
+      contents: write
     uses: ./.github/workflows/build.yml
     with:
       source_ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
