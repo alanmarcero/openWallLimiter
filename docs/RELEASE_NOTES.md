@@ -1,3 +1,9 @@
+# openWallLimiter 1.9.1
+
+The v1.9.0 tag build never started. The release workflow now allows the build workflow's preview job to request contents write, which GitHub checks before any job starts. The publish job still uses contents write and does not send a commit SHA as the release target.
+
+Host latency at 48 kHz is 9.06 ms (435 samples). That figure includes the limiter delay, the longest oversampling filter, and the 128-sample true-peak guard. Streaming (−14 LUFS) and club (−9 LUFS) targets use the BS.1770 meter. The 48 factory presets are host programs. Undo, redo, A/B compare, and user presets are in the editor. The project license is MIT.
+
 # openWallLimiter 1.9.0
 
 The editor resizes without a locked aspect ratio and remembers its size. Latency shown to the host includes the oversampling filters and the 128-sample true-peak guard, and the editor prints that delay in milliseconds and samples. Streaming (−14 LUFS) and club (−9 LUFS) loudness targets sit on the BS.1770 meter. The 48 factory presets are host programs. Undo, A/B compare, and saved presets are in the editor. The project license is MIT.
