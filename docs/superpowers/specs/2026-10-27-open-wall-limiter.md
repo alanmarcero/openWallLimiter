@@ -4,7 +4,7 @@ Build a mastering limiter in Alan Marcero's open plugin collection. The user req
 
 ## Scope and architecture
 
-JUCE 8.0.9, C++20, CMake; VST3 for macOS universal and Windows x64, AU for macOS. An independently testable C++ core supplies stereo/mono lookahead limiting. The JUCE wrapper supplies oversampling, host parameters/state, latency compensation, metering and original native graphics. Use the collection's AGPL-3.0 licensing and package JUCE notices.
+JUCE 8.0.9, C++20, CMake; VST3 for macOS universal and Windows x64, AU for macOS. An independently testable C++ core supplies stereo/mono lookahead limiting. The JUCE wrapper supplies oversampling, host parameters/state, latency compensation, metering and original native graphics. This project is MIT. Package JUCE notices under JUCE's own terms.
 
 Five modes: Modern (gain-reduction-dependent release), Smooth (longer release and smooth anticipation), Aggressive (short release with controllable clipping), Safe (long release without intentional clipping), Classic (single-envelope constant-dB recovery). These are original implementations, not bit-identical emulations of Waves code. Shared controls: threshold -30..0 dB, ceiling -30..0 dB, release 0.1..10 multiplier, clip 0..100%, upward 0..10 dB, stereo link 0..100%, oversampling off/2/4/8/16, true peak, 16/24-bit TPDF dither or off, gain match, delta, bypass. Factory presets and resettable short-term/integrated LUFS and peak/GR meters.
 

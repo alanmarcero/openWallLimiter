@@ -52,6 +52,13 @@ samples; rounding this value early can produce an alignment error. This core doe
 not detect reconstructed intersample peaks. Oversampling and any true peak margin
 belong to the plugin layer.
 
+The plugin reports one latency for every lookahead, oversampling, and true-peak
+setting. It pads each oversampling path to the slowest path (that path's limiter
+delay brought back to the host rate, plus its oversampling filter delay), then
+adds the 128-sample true-peak guard. The lookahead knob only shortens the attack
+window inside that fixed delay. The editor shows the reported latency in
+milliseconds and samples.
+
 ## Policies
 
 The five modes follow the intent of the five L4 modes: Modern is balanced and

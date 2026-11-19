@@ -1,4 +1,5 @@
 #include "HostChecks.h"
+#include "SuiteChecks.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -14,6 +15,8 @@ static void set(WallProcessor &p, const char *id, float value) {
 int main(int argc, char **argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     try {
+        checks::latencyAndTargets();
+        checks::suiteBehavior();
         checks::routing();
         checks::quality();
         WallProcessor p;
@@ -131,6 +134,7 @@ int main(int argc, char **argv) {
             if (dynamic_cast<juce::Button*>(control) || dynamic_cast<juce::ComboBox*>(control))
                 require(control->getHeight() >= 40 && control->getWidth() >= 40, "action target is smaller than 40 px");
         checks::controls(p, *editor);
+        checks::editorSuite(p, *editor);
         auto *presetsBox = dynamic_cast<juce::ComboBox *>(editor->findChildWithID("presets"));
         require(presetsBox != nullptr && presetsBox->getNumItems() == 48, "expected 48 factory presets");
         require(presetsBox->getRootMenu()->getNumItems() == 7, "expected 7 dance-style preset submenus");
