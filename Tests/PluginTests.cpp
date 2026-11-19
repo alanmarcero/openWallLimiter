@@ -146,14 +146,29 @@ int main(int argc, char **argv) {
         juce::File output =
             juce::File::getCurrentWorkingDirectory().getChildFile(argc > 1 ? argv[1] : "docs/screenshots");
         output.createDirectory();
+        // The checks above load a factory preset and move parameters. The published
+        // preview is a separate editor on the factory default patch at the default size.
+        WallProcessor preview;
+        preview.prepareToPlay(48000, 256);
+        auto previewEditor = std::unique_ptr<juce::AudioProcessorEditor>(preview.createEditor());
+        require(previewEditor->getWidth() == WallProcessor::defaultEditorWidth, "preview width");
+        require(previewEditor->getHeight() == WallProcessor::defaultEditorHeight, "preview height");
+        require(preview.getCurrentProgram() == 0, "preview program");
+        require(std::abs(preview.parameters.getRawParameterValue("threshold")->load()) < .02f, "preview threshold");
+        require(std::abs(preview.parameters.getRawParameterValue("ceiling")->load() + 1.f) < .02f, "preview ceiling");
+        require(std::abs(preview.parameters.getRawParameterValue("mode")->load()) < .02f, "preview mode");
+        require(std::lround(preview.parameters.getRawParameterValue("oversampling")->load()) == 2, "preview oversampling");
         for (int tick = 0; tick < 240; ++tick) {
             auto signal =
                 checks::tone(1600, 48000, 997, .2f + .6f * float(.5 + .5 * std::sin(double(tick) * .08)));
-            checks::render(p, signal, 256);
+            checks::render(preview, signal, 256);
             juce::Thread::sleep(34);
             juce::Timer::callPendingTimersSynchronously();
         }
-        auto img = editor->createComponentSnapshot(editor->getLocalBounds());
+        auto img = previewEditor->createComponentSnapshot(previewEditor->getLocalBounds());
+        require(img.getWidth() == WallProcessor::defaultEditorWidth &&
+                    img.getHeight() == WallProcessor::defaultEditorHeight,
+                "preview snapshot size");
         juce::MemoryOutputStream png;
         juce::PNGImageFormat().writeImageToStream(img, png);
         require(output.getChildFile("openWallLimiter.png").replaceWithData(png.getData(), png.getDataSize()),

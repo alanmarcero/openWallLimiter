@@ -113,7 +113,13 @@ jobs:
 
   update-preview:
     # Refreshes docs/screenshots/preview.png (the image OpenVST Manager shows) from the
-    # real editor capture whenever UI-affecting files change on main.
+    # Windows editor capture on every push to main. The capture is the factory-default
+    # patch at the editor's default size.
+    #
+    # A path filter used to skip the commit unless the push touched Source/, assets/,
+    # Tools/, tools/, or Tests/. The v1.9.1 push only changed CMakeLists.txt (the
+    # version string drawn in the editor footer), the release workflow, and the notes.
+    # The job logged "No UI changes; keeping preview." and left the previous image.
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     needs: windows
     runs-on: ubuntu-latest
@@ -129,7 +135,6 @@ jobs:
           path: preview
       - name: Commit refreshed preview if changed
         run: |
-          git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -qE '^(Source|assets|Tools|tools|Tests)/' || { echo "No UI changes; keeping preview."; exit 0; }
           mkdir -p docs/screenshots
           cp "preview/openWallLimiter.png" docs/screenshots/preview.png
           if git diff --quiet -- docs/screenshots/preview.png; then echo "Preview unchanged."; exit 0; fi
