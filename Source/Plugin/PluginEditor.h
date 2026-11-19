@@ -1,6 +1,11 @@
 #pragma once
 #include "PluginProcessor.h"
 #include <map>
+#include <memory>
+namespace suite {
+class PresetLibrary;
+class PresetBrowser;
+} // namespace suite
 class WallLook final : public juce::LookAndFeel_V4 {
   public:
     WallLook();
@@ -16,6 +21,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     ~WallEditor() override;
     void paint(juce::Graphics &) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress &) override;
 
   private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -26,6 +32,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     void combo(const char *id, const juce::StringArray &);
     void toggle(const char *id, const char *label);
     void drawGraph(juce::Graphics &);
+    juce::Rectangle<int> at(int x, int y, int w, int h) const;
     WallProcessor &wallProcessor;
     WallLook look;
     juce::Image fortress;
@@ -40,6 +47,11 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     juce::ComboBox presets;
     juce::TextButton prevPreset{"Previous"}, nextPreset{"Next"};
     juce::TextButton reset{"Reset meters"}, link{"Link levels"};
+    juce::TextButton undoButton{"Undo"}, redoButton{"Redo"};
+    juce::TextButton abA{"A"}, abB{"B"}, abAToB{"A>B"}, abBToA{"B>A"};
+    juce::TextButton libraryButton{"Library"}, matchLoudness{"Match"};
+    std::unique_ptr<suite::PresetLibrary> presetLibrary;
+    std::unique_ptr<suite::PresetBrowser> presetBrowser;
     juce::TooltipWindow tooltip{this, 650};
     std::array<float, 240> inputHistory{}, outputHistory{}, reductionHistory{};
     int cursor = 0;

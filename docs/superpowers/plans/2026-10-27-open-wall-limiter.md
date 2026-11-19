@@ -11,7 +11,7 @@
 - Product and repository: openWallLimiter; company Alan Marcero; manufacturer Amrc; code Owli.
 - Float, mono/stereo, fixed reported delay, callback free of locks and allocation.
 - Public-source-derived original algorithms; no claim of exact Waves equivalence.
-- macOS universal VST3/AU and Windows x64 VST3; AGPL-3.0.
+- macOS universal VST3/AU and Windows x64 VST3; MIT.
 
 ## Review Focus
 - Output ceiling under extreme drive and automation: core and wrapper tests.

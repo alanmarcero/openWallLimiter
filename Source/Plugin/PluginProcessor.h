@@ -5,6 +5,8 @@
 #include "MultiPoleFilter.h"
 #include "Parameters.h"
 #include "TruePeakGuard.h"
+#include "suite/ABCompare.h"
+#include "suite/ParameterUndo.h"
 #include <array>
 #include <atomic>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -36,20 +38,42 @@ class WallProcessor final : public juce::AudioProcessor {
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return .05; }
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return {}; }
+    int getNumPrograms() override { return int(factoryPresets().size()); }
+    int getCurrentProgram() override { return currentProgram; }
+    void setCurrentProgram(int) override;
+    const juce::String getProgramName(int) override;
     void changeProgramName(int, const juce::String &) override {}
     void getStateInformation(juce::MemoryBlock &) override;
     void setStateInformation(const void *, int) override;
     void resetMeters() noexcept { meterReset.store(true); }
     void applyPreset(int index);
     static const std::vector<WallPreset> &factoryPresets();
+    juce::MemoryBlock captureParameters();
+    bool loadParameterState(const juce::MemoryBlock &);
+    void toggleAB();
+    void copyAB(int from, int to);
+    int activeAB() const noexcept { return abCompare.active(); }
+    void undo() { undoManager.undo(); }
+    void redo() { undoManager.redo(); }
+    bool canUndo() const { return undoManager.canUndo(); }
+    bool canRedo() const { return undoManager.canRedo(); }
+    void matchLoudnessTarget();
+    int storedEditorWidth() const noexcept { return editorWidth; }
+    int storedEditorHeight() const noexcept { return editorHeight; }
+    void setStoredEditorSize(int width, int height);
+    static constexpr int defaultEditorWidth = 1120;
+    static constexpr int defaultEditorHeight = 828;
+    static constexpr int minEditorWidth = 960;
+    static constexpr int minEditorHeight = 680;
+    static constexpr int maxEditorWidth = 2560;
+    static constexpr int maxEditorHeight = 1800;
     juce::AudioProcessorValueTreeState parameters;
+    juce::UndoManager undoManager;
+    suite::ParameterUndo parameterUndo;
     std::atomic<float> inputDb{-100}, outputDb{-100}, reductionDb{0}, shortLufs{-100}, integratedLufs{-100},
         truePeakDb{-100};
     float artworkPhase() const noexcept { return artworkClock.currentPhase(); }
+    double preparedSampleRate() const noexcept { return preparedRate; }
     std::atomic<int> effectiveFactor{4};
 
   private:
@@ -85,6 +109,11 @@ class WallProcessor final : public juce::AudioProcessor {
     double preparedRate = 48000;
     bool ready = false;
     uint32_t randomState = 0x91a5c3u;
+    suite::ABCompare abCompare;
+    int editorWidth = defaultEditorWidth, editorHeight = defaultEditorHeight, currentProgram = 0;
     float randomUnit() noexcept;
+    juce::ValueTree sanitizeTree(juce::ValueTree);
+    void restoreTree(juce::ValueTree, bool undoable, const juce::String &undoName);
+    void restoreBlock(const juce::MemoryBlock &, bool undoable, const juce::String &undoName);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WallProcessor)
 };

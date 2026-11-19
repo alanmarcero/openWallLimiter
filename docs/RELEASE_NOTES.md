@@ -1,3 +1,7 @@
+# openWallLimiter 1.9.0
+
+The editor resizes without a locked aspect ratio and remembers its size. Latency shown to the host includes the oversampling filters and the 128-sample true-peak guard, and the editor prints that delay in milliseconds and samples. Streaming (−14 LUFS) and club (−9 LUFS) loudness targets sit on the BS.1770 meter. The 48 factory presets are host programs. Undo, A/B compare, and saved presets are in the editor. The project license is MIT.
+
 # openWallLimiter 1.8.0
 
 Organizes 48 factory presets across seven dance music styles (12 Uplifting plus 6 each in Rolling, Progressive, Psy, Tech, Bass & Breaks, and Classic) and updates the editor preset layout.

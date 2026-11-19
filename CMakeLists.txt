@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(openWallLimiter VERSION 1.8.0 LANGUAGES C CXX)
+project(openWallLimiter VERSION 1.9.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
@@ -35,20 +35,23 @@ if(OWL_BUILD_PLUGIN)
     PLUGIN_MANUFACTURER_CODE Amrc PLUGIN_CODE Owli
     FORMATS ${OWL_FORMATS} VST3_CATEGORIES Fx Dynamics Mastering
     IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE NEEDS_MIDI_OUTPUT FALSE
-    IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE)
   target_sources(openWallLimiter PRIVATE
     Source/Plugin/PluginProcessor.cpp Source/Plugin/PluginEditor.cpp Source/Plugin/Parameters.cpp
     Source/Filters/BiquadFilter.cpp Source/Filters/ButterworthCoeffs.cpp Source/Filters/MultiPoleFilter.cpp
-    Source/Metering/LoudnessMeter.cpp)
-  target_include_directories(openWallLimiter PUBLIC Source/Plugin Source/Filters Source/Metering)
+    Source/Metering/LoudnessMeter.cpp
+    Source/suite/ParameterUndo.cpp Source/suite/ABCompare.cpp
+    Source/suite/PresetLibrary.cpp Source/suite/PresetBrowser.cpp)
+  target_include_directories(openWallLimiter PUBLIC Source Source/Plugin Source/Filters Source/Metering)
   target_compile_definitions(openWallLimiter PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
   target_link_libraries(openWallLimiter PRIVATE wall_core WallAssets juce::juce_audio_utils juce::juce_dsp
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
   if(BUILD_TESTING)
     add_executable(wall_plugin_tests Tests/PluginTests.cpp)
     target_link_libraries(wall_plugin_tests PRIVATE openWallLimiter wall_core WallAssets juce::juce_audio_utils juce::juce_dsp)
-    target_compile_definitions(wall_plugin_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_compile_definitions(wall_plugin_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+      OWL_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME plugin COMMAND wall_plugin_tests "${CMAKE_BINARY_DIR}/screenshots")
     # Objective sound-quality measurements; run manually, not part of ctest.
     add_executable(wall_quality_probe Tests/QualityProbe.cpp)

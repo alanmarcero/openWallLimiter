@@ -9,7 +9,7 @@ Official references:
 
 The comparison identified three controls that openWallLimiter did not expose independently:
 
-1. **Adjustable lookahead** — Pro-L 2 exposes lookahead for its initial transient stage. openWallLimiter now offers 0–5 ms while retaining its fixed 5 ms host-reported latency.
+1. **Adjustable lookahead** — Pro-L 2 exposes lookahead for its initial transient stage. openWallLimiter offers 0–5 ms. Moving the knob does not change the latency reported to the host. That figure also includes the longest oversampling filter delay and a 128-sample true-peak guard.
 2. **Transient channel link** — Pro-L 2 separates transient linking from release linking. openWallLimiter's existing `stereo_link` parameter now has the clearer display name **Transient Link** while retaining the same stable parameter ID and behavior.
 3. **Release channel link** — a new independent **Release Link** control blends each channel's recovery toward shared release behavior. Its default is 100%, matching the prior linked envelope feel.
 

@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "LoudnessTarget.h"
 #include "PluginEditor.h"
 #include <algorithm>
 #include <cmath>
@@ -20,9 +21,11 @@ WallProcessor::WallProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters(*this, nullptr, "OpenWallLimiter", wall::parameterLayout()) {
+      parameters(*this, nullptr, "OpenWallLimiter", wall::parameterLayout()),
+      parameterUndo(*this, undoManager) {
     for (size_t i = 0; i < ids.size(); ++i)
         values[i] = parameters.getRawParameterValue(ids[i]);
+    abCompare.seed(captureParameters());
 }
 bool WallProcessor::isBusesLayoutSupported(const BusesLayout &l) const {
     return (l.getMainInputChannelSet() == juce::AudioChannelSet::mono() ||
@@ -39,6 +42,9 @@ void WallProcessor::prepareToPlay(double sr, int block) {
     input.setSize(channels, chunkSize);
     dry.setSize(channels, chunkSize);
     metering.setSize(channels, chunkSize);
+    // Host latency is the slowest oversampled path (limiter delay at the host rate
+    // plus that path's oversampling filter) plus the 128-sample true-peak guard.
+    // The lookahead knob does not change the value passed to setLatencySamples.
     latency = 0;
     for (size_t i = 0; i < paths.size(); ++i) {
         auto &p = paths[i];
@@ -296,41 +302,162 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
     shortLufs.store(meter.shortTermLufs());
     integratedLufs.store(meter.integratedLufs());
 }
+juce::ValueTree WallProcessor::sanitizeTree(juce::ValueTree incoming) {
+    if (!incoming.getChildWithProperty("id", "lookahead_ms").isValid()) {
+        juce::ValueTree child("PARAM");
+        child.setProperty("id", "lookahead_ms", nullptr);
+        child.setProperty("value", 5.0f, nullptr);
+        incoming.addChild(child, -1, nullptr);
+    }
+    if (!incoming.getChildWithProperty("id", "release_link").isValid()) {
+        juce::ValueTree child("PARAM");
+        child.setProperty("id", "release_link", nullptr);
+        child.setProperty("value", 0.0f, nullptr);
+        incoming.addChild(child, -1, nullptr);
+    }
+    for (auto *parameter : getParameters())
+        if (auto *p = dynamic_cast<juce::RangedAudioParameter *>(parameter)) {
+            auto child = incoming.getChildWithProperty("id", p->paramID);
+            float v = child.isValid() ? float(child["value"]) : p->convertFrom0to1(p->getDefaultValue());
+            if (!std::isfinite(v))
+                v = p->convertFrom0to1(p->getDefaultValue());
+            v = p->convertFrom0to1(std::clamp(p->convertTo0to1(v), 0.f, 1.f));
+            if (!child.isValid()) {
+                child = juce::ValueTree("PARAM");
+                child.setProperty("id", p->paramID, nullptr);
+                incoming.addChild(child, -1, nullptr);
+            }
+            child.setProperty("value", v, nullptr);
+        }
+    return incoming;
+}
+juce::MemoryBlock WallProcessor::captureParameters() {
+    auto state = parameters.copyState();
+    for (const char *key : {"editorWidth", "editorHeight", "program", "abSlot"})
+        state.removeProperty(key, nullptr);
+    juce::MemoryBlock block;
+    if (auto xml = state.createXml())
+        copyXmlToBinary(*xml, block);
+    return block;
+}
+void WallProcessor::restoreTree(juce::ValueTree tree, bool undoable, const juce::String &undoName) {
+    if (!tree.isValid() || !tree.hasType(parameters.state.getType()))
+        return;
+    tree = sanitizeTree(tree);
+    if (undoable)
+        parameterUndo.performTree(parameters, tree, undoName);
+    else {
+        parameterUndo.suspend();
+        parameters.replaceState(tree);
+        parameterUndo.rescan();
+        parameterUndo.resume();
+    }
+}
+void WallProcessor::restoreBlock(const juce::MemoryBlock &block, bool undoable, const juce::String &undoName) {
+    if (auto xml = getXmlFromBinary(block.getData(), int(block.getSize())))
+        restoreTree(juce::ValueTree::fromXml(*xml), undoable, undoName);
+}
+bool WallProcessor::loadParameterState(const juce::MemoryBlock &block) {
+    auto xml = getXmlFromBinary(block.getData(), int(block.getSize()));
+    if (xml == nullptr || !xml->hasTagName(parameters.state.getType()))
+        return false;
+    restoreTree(juce::ValueTree::fromXml(*xml), true, "Preset");
+    return true;
+}
+void WallProcessor::setStoredEditorSize(int width, int height) {
+    editorWidth = std::clamp(width, minEditorWidth, maxEditorWidth);
+    editorHeight = std::clamp(height, minEditorHeight, maxEditorHeight);
+}
+void WallProcessor::toggleAB() {
+    restoreBlock(abCompare.toggle(captureParameters()), false, {});
+    undoManager.clearUndoHistory();
+}
+void WallProcessor::copyAB(int from, int to) {
+    if (auto next = abCompare.copy(from, to, captureParameters())) {
+        restoreBlock(*next, false, {});
+        undoManager.clearUndoHistory();
+    }
+}
+void WallProcessor::matchLoudnessTarget() {
+    const int mode = int(std::lround(parameters.getRawParameterValue("lufs_mode")->load()));
+    const float custom = parameters.getRawParameterValue("lufs_target")->load();
+    const auto target = wall::targetLufs(mode, custom);
+    if (!target)
+        return;
+    const float integrated = integratedLufs.load();
+    const float shortTerm = shortLufs.load();
+    const float measured = integrated > -99.f ? integrated : shortTerm;
+    auto *gain = parameters.getParameter("input_gain");
+    if (gain == nullptr || measured <= -99.f)
+        return;
+    const float next = wall::matchedInputGain(parameters.getRawParameterValue("input_gain")->load(), measured, *target);
+    suite::ParameterUndo::Group group(parameterUndo, "Match loudness");
+    gain->beginChangeGesture();
+    gain->setValueNotifyingHost(gain->convertTo0to1(next));
+    gain->endChangeGesture();
+    resetMeters();
+}
 void WallProcessor::getStateInformation(juce::MemoryBlock &dest) {
-    if (auto xml = parameters.copyState().createXml())
+    abCompare.setSlot(abCompare.active(), captureParameters());
+    auto state = parameters.copyState();
+    for (const char *key : {"editorWidth", "editorHeight", "program", "abSlot"})
+        state.removeProperty(key, nullptr);
+    if (auto xml = state.createXml()) {
+        xml->setAttribute("editorWidth", editorWidth);
+        xml->setAttribute("editorHeight", editorHeight);
+        xml->setAttribute("program", currentProgram);
+        xml->setAttribute("abSlot", abCompare.active());
+        for (int i = 0; i < 2; ++i) {
+            auto *child = xml->createNewChildElement("AB");
+            child->setAttribute("index", i);
+            child->setAttribute("data", abCompare.slot(i).toBase64Encoding());
+        }
         copyXmlToBinary(*xml, dest);
+    }
 }
 void WallProcessor::setStateInformation(const void *data, int size) {
-    if (auto xml = getXmlFromBinary(data, size); xml && xml->hasTagName(parameters.state.getType())) {
-        auto incoming = juce::ValueTree::fromXml(*xml);
-        if (!incoming.getChildWithProperty("id", "lookahead_ms").isValid()) {
-            juce::ValueTree child("PARAM");
-            child.setProperty("id", "lookahead_ms", nullptr);
-            child.setProperty("value", 5.0f, nullptr);
-            incoming.addChild(child, -1, nullptr);
-        }
-        if (!incoming.getChildWithProperty("id", "release_link").isValid()) {
-            juce::ValueTree child("PARAM");
-            child.setProperty("id", "release_link", nullptr);
-            child.setProperty("value", 0.0f, nullptr);
-            incoming.addChild(child, -1, nullptr);
-        }
-        for (auto *parameter : getParameters())
-            if (auto *p = dynamic_cast<juce::RangedAudioParameter *>(parameter)) {
-                auto child = incoming.getChildWithProperty("id", p->paramID);
-                float v = child.isValid() ? float(child["value"]) : p->convertFrom0to1(p->getDefaultValue());
-                if (!std::isfinite(v))
-                    v = p->convertFrom0to1(p->getDefaultValue());
-                v = p->convertFrom0to1(std::clamp(p->convertTo0to1(v), 0.f, 1.f));
-                if (!child.isValid()) {
-                    child = juce::ValueTree("PARAM");
-                    child.setProperty("id", p->paramID, nullptr);
-                    incoming.addChild(child, -1, nullptr);
-                }
-                child.setProperty("value", v, nullptr);
-            }
-        parameters.replaceState(incoming);
+    auto xml = getXmlFromBinary(data, size);
+    if (xml == nullptr || !xml->hasTagName(parameters.state.getType()))
+        return;
+    setStoredEditorSize(xml->getIntAttribute("editorWidth", defaultEditorWidth),
+                        xml->getIntAttribute("editorHeight", defaultEditorHeight));
+    const int program = xml->getIntAttribute("program", 0);
+    const int slot = juce::jlimit(0, 1, xml->getIntAttribute("abSlot", 0));
+    juce::MemoryBlock ab0, ab1;
+    const bool haveAB = xml->getChildByName("AB") != nullptr;
+    for (int i = 0; i < xml->getNumChildElements(); ++i) {
+        auto *child = xml->getChildElement(i);
+        if (child == nullptr || !child->hasTagName("AB"))
+            continue;
+        juce::MemoryBlock block;
+        block.fromBase64Encoding(child->getStringAttribute("data"));
+        if (child->getIntAttribute("index", 0) == 0)
+            ab0 = std::move(block);
+        else
+            ab1 = std::move(block);
     }
+    for (int i = xml->getNumChildElements() - 1; i >= 0; --i)
+        if (auto *child = xml->getChildElement(i); child != nullptr && child->hasTagName("AB"))
+            xml->removeChildElement(child, true);
+    restoreTree(juce::ValueTree::fromXml(*xml), false, {});
+    undoManager.clearUndoHistory();
+    if (program >= 0 && program < getNumPrograms())
+        currentProgram = program;
+    if (!haveAB) {
+        abCompare.seed(captureParameters());
+    } else {
+        if (ab0.getSize() == 0)
+            ab0 = captureParameters();
+        if (ab1.getSize() == 0)
+            ab1 = captureParameters();
+        abCompare.setSlot(0, ab0);
+        abCompare.setSlot(1, ab1);
+        abCompare.setActive(slot);
+        abCompare.setSlot(slot, captureParameters());
+    }
+    if (auto *editor = getActiveEditor())
+        if (editor->getWidth() != editorWidth || editor->getHeight() != editorHeight)
+            editor->setSize(editorWidth, editorHeight);
 }
 const std::vector<WallPreset> &WallProcessor::factoryPresets() {
     static const std::vector<WallPreset> list{
@@ -543,10 +670,23 @@ const std::vector<WallPreset> &WallProcessor::factoryPresets() {
     return list;
 }
 
+void WallProcessor::setCurrentProgram(int index) {
+    if (index < 0 || index >= getNumPrograms() || index == currentProgram)
+        return;
+    applyPreset(index);
+}
+const juce::String WallProcessor::getProgramName(int index) {
+    const auto &presets = factoryPresets();
+    if (index < 0 || index >= int(presets.size()))
+        return {};
+    return presets[size_t(index)].name;
+}
 void WallProcessor::applyPreset(int index) {
     const auto &presets = factoryPresets();
     if (index < 0 || index >= static_cast<int>(presets.size()))
         return;
+    currentProgram = index;
+    suite::ParameterUndo::Group group(parameterUndo, "Preset");
     std::ranges::for_each(getParameters(), [](juce::AudioProcessorParameter *parameter) {
         parameter->beginChangeGesture();
         parameter->setValueNotifyingHost(parameter->getDefaultValue());
