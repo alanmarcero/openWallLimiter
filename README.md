@@ -6,6 +6,10 @@ A mastering limiter for controlling peaks and loudness at the end of a mix.
 
 [Download the latest release](https://github.com/alanmarcero/openWallLimiter/releases/latest) · [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
+## Beta
+
+All of these plugins are in beta. The macOS and Linux builds are not up to date, so the Windows build is the one to use for now. A plugin can change dramatically from one release to the next, but the goal is for each one to keep getting better.
+
 The fortress mark pulses on quarter notes from the DAW transport, including after tempo changes or seeks. It holds when playback stops. Hosts without transport use an audio-sample clock.
 
 ## Controls
