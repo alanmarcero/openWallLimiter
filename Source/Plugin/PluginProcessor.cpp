@@ -3,6 +3,7 @@
 #include "PluginEditor.h"
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace {
 constexpr std::array<const char *, 24> ids{
@@ -32,50 +33,114 @@ bool WallProcessor::isBusesLayoutSupported(const BusesLayout &l) const {
             l.getMainInputChannelSet() == juce::AudioChannelSet::stereo()) &&
            l.getMainInputChannelSet() == l.getMainOutputChannelSet();
 }
+void WallProcessor::SincPad::prepare(int maxSamples, float delaySamples) {
+    std::size_t ringSize = 64;
+    const auto required = static_cast<std::size_t>(std::max(maxSamples + tapsCount + 8, 64));
+    while (ringSize < required) ringSize <<= 1;
+    mask = ringSize - 1;
+    std::ranges::for_each(rings, [ringSize](std::vector<float> &r) { r.assign(ringSize, 0.0f); });
+    positions = {0, 0};
+
+    const float clampedDelay = std::max(float(sincPadHalfSpan), delaySamples);
+    intDelay = int(std::floor(clampedDelay));
+    const float frac = clampedDelay - float(intDelay);
+    baseLag = intDelay - sincPadHalfSpan;
+    exactInteger = frac < 1e-6f;
+    taps.fill(0.0);
+    if (exactInteger) {
+        taps[size_t(sincPadHalfSpan)] = 1.0;
+        return;
+    }
+
+    double sum = 0.0;
+    int k = 0;
+    while (k < tapsCount) {
+        const double t = double(k - sincPadHalfSpan) - double(frac);
+        const double u = t / double(sincPadHalfSpan);
+        double w = 0.0;
+        if (std::abs(u) < 1.0)
+            w = .42 + .50 * std::cos(std::numbers::pi * u) + .08 * std::cos(2.0 * std::numbers::pi * u);
+        double sinc = 1.0;
+        if (std::abs(t) >= 1e-12)
+            sinc = std::sin(std::numbers::pi * t) / (std::numbers::pi * t);
+        taps[size_t(k)] = sinc * w;
+        sum += taps[size_t(k)];
+        ++k;
+    }
+    std::ranges::for_each(taps, [sum](double &v) { v /= sum; });
+}
+
+void WallProcessor::SincPad::reset() noexcept {
+    std::ranges::for_each(rings, [](std::vector<float> &r) { std::fill(r.begin(), r.end(), 0.0f); });
+    positions = {0, 0};
+}
+
+float WallProcessor::SincPad::process(int channel, float sample) noexcept {
+    const auto ch = static_cast<std::size_t>(channel);
+    auto &ring = rings[ch];
+    const auto pos = positions[ch];
+    ring[pos] = sample;
+    positions[ch] = (pos + 1) & mask;
+    if (exactInteger)
+        return ring[(pos - static_cast<std::size_t>(intDelay)) & mask];
+
+    double acc = 0.0;
+    int k = 0;
+    while (k < tapsCount) {
+        acc += taps[static_cast<std::size_t>(k)] *
+               double(ring[(pos - static_cast<std::size_t>(baseLag + k)) & mask]);
+        ++k;
+    }
+    return float(acc);
+}
+
 void WallProcessor::prepareToPlay(double sr, int block) {
     artworkClock.reset();
     ready = false;
-    sr = std::isfinite(sr) ? std::clamp(sr, 8000., 192000.) : 48000.;
+    if (std::isfinite(sr)) sr = std::clamp(sr, 8000., 192000.);
+    if (!std::isfinite(sr)) sr = 48000.;
     preparedRate = sr;
     channels = std::clamp(getTotalNumInputChannels(), 1, 2);
     chunkSize = std::clamp(block, 32, 4096);
     input.setSize(channels, chunkSize);
     dry.setSize(channels, chunkSize);
     metering.setSize(channels, chunkSize);
-    // Host latency is the slowest oversampled path (limiter delay at the host rate
-    // plus that path's oversampling filter) plus the 128-sample true-peak guard.
-    // The lookahead knob does not change the value passed to setLatencySamples.
-    latency = 0;
-    for (size_t i = 0; i < paths.size(); ++i) {
-        auto &p = paths[i];
-        p.oversampler = std::make_unique<Oversampler>(size_t(channels), i,
-                                                      Oversampler::filterHalfBandFIREquiripple, true, true);
-        p.oversampler->initProcessing(size_t(chunkSize));
-        p.limiter.prepare(sr * double(1 << i), channels);
-        p.nativeLatency =
-            float(p.limiter.latencySamples()) / float(1 << i) + p.oversampler->getLatencyInSamples();
-        latency = std::max(latency, int(std::ceil(p.nativeLatency)));
-        p.buffer.setSize(channels, chunkSize);
-    }
-    const juce::dsp::ProcessSpec spec{sr, juce::uint32(chunkSize), juce::uint32(channels)};
-    for (auto &p : paths) {
-        p.pad.setMaximumDelayInSamples(latency + 4);
-        p.pad.prepare(spec);
-        p.pad.setDelay(float(latency) - p.nativeLatency);
-    }
-    latency += wall::TruePeakGuard::delaySamples;
-    peakGuard.prepare(sr);
-    dryDelay.setMaximumDelayInSamples(latency + 4);
-    dryDelay.prepare(spec);
-    dryDelay.setDelay(float(latency));
+
+    filters[0].setLinearPhaseSubCut(true);
     filters[0].setCutoff(value(13));
     filters[0].setSlope(static_cast<analog_master::core::FilterSlope>(int(value(14))));
     filters[0].setBypassed(value(15) < .5f);
     filters[1].setCutoff(value(16));
     filters[1].setSlope(static_cast<analog_master::core::FilterSlope>(int(value(17))));
     filters[1].setBypassed(value(18) < .5f);
-    for (auto &f : filters)
-        f.prepare(sr);
+    std::ranges::for_each(filters, [sr](auto &f) { f.prepare(sr); });
+
+    // Host latency stays fixed across lookahead, oversampling, and true-peak changes.
+    int maxBasePathLatency = 0;
+    size_t idx = 0;
+    while (idx < paths.size()) {
+        auto &p = paths[idx];
+        p.oversampler = std::make_unique<Oversampler>(size_t(channels), idx,
+                                                      Oversampler::filterHalfBandFIREquiripple, true, true);
+        p.oversampler->initProcessing(size_t(chunkSize));
+        p.limiter.prepare(sr * double(1 << idx), channels);
+        p.nativeLatency =
+            float(p.limiter.latencySamples()) / float(1 << idx) + p.oversampler->getLatencyInSamples();
+        maxBasePathLatency = std::max(maxBasePathLatency, int(std::ceil(p.nativeLatency)));
+        p.buffer.setSize(channels, chunkSize);
+        ++idx;
+    }
+    pathLatency = maxBasePathLatency + sincPadHalfSpan;
+    std::ranges::for_each(paths, [this](Path &p) {
+        p.pad.prepare(pathLatency + 4, float(pathLatency) - p.nativeLatency);
+    });
+    latency = filters[0].latencySamples() + pathLatency + wall::TruePeakGuard::delaySamples;
+    peakGuard.prepare(sr);
+    const juce::dsp::ProcessSpec spec{sr, juce::uint32(chunkSize), juce::uint32(channels)};
+    dryDelay.setMaximumDelayInSamples(latency + 4);
+    dryDelay.prepare(spec);
+    dryDelay.setDelay(float(latency));
+    std::ranges::for_each(ditherError, [](auto &err) { err.fill(0.0f); });
     meter.prepare(sr, channels);
     peakMeter = std::make_unique<Oversampler>(size_t(channels), 2, Oversampler::filterHalfBandFIREquiripple,
                                               true, true);
@@ -106,6 +171,7 @@ void WallProcessor::reset() {
     for (auto &f : filters)
         f.reset();
     tiltState = {0.0f, 0.0f};
+    std::ranges::for_each(ditherError, [](auto &err) { err.fill(0.0f); });
     dryDelay.reset();
     peakGuard.reset();
     if (peakMeter)
@@ -152,11 +218,15 @@ void WallProcessor::runPath(int index, const wall::Settings &settings, int n) {
     p.limiter.process(up.getChannelPointer(0), channels > 1 ? up.getChannelPointer(1) : nullptr,
                       int(up.getNumSamples()));
     p.oversampler->processSamplesDown(block);
-    for (int c = 0; c < channels; ++c)
-        for (int i = 0; i < n; ++i) {
-            p.pad.pushSample(c, p.buffer.getSample(c, i));
-            p.buffer.setSample(c, i, p.pad.popSample(c));
+    int c = 0;
+    while (c < channels) {
+        int i = 0;
+        while (i < n) {
+            p.buffer.setSample(c, i, p.pad.process(c, p.buffer.getSample(c, i)));
+            ++i;
         }
+        ++c;
+    }
 }
 float WallProcessor::randomUnit() noexcept {
     randomState ^= randomState << 13;
@@ -216,7 +286,7 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
     const bool tp = value(8) > .5f;
     wall::Settings settings;
     settings.thresholdDb = value(0);
-    settings.ceilingDb = value(1) + (tp ? wall::TruePeakGuard::reserveDb : 0.f);
+    settings.ceilingDb = value(1);
     settings.mode = static_cast<wall::Mode>(int(value(2)));
     settings.release = value(3);
     settings.clip = value(4) * .01f;
@@ -233,43 +303,63 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
         p.limiter.reset();
         p.oversampler->reset();
         p.pad.reset();
-        warmup = latency + fadeLength;
+        warmup = pathLatency + fadeLength;
         fade = 0;
     }
     runPath(currentPath, settings, n);
     if (nextPath >= 0)
         runPath(nextPath, settings, n);
     effectiveFactor.store(1 << (nextPath >= 0 ? nextPath : currentPath), std::memory_order_relaxed);
-    bypassMix.setTargetValue(hostBypass || value(12) > .5f ? 1.f : 0.f);
-    matchGain.setTargetValue(value(10) > .5f ? juce::Decibels::decibelsToGain(value(0)) : 1.f);
-    deltaMix.setTargetValue(value(11) > .5f ? 1.f : 0.f);
+    const bool bypassOn = hostBypass || value(12) > .5f;
+    const bool matchOn = value(10) > .5f;
+    const bool deltaOn = value(11) > .5f;
+    const float gainMatchDb = juce::Decibels::decibelsToGain(value(0));
+    bypassMix.setTargetValue(bypassOn ? 1.f : 0.f);
+    matchGain.setTargetValue(matchOn ? gainMatchDb : 1.f);
+    deltaMix.setTargetValue(deltaOn ? 1.f : 0.f);
     const float ceiling = juce::Decibels::decibelsToGain(value(1));
     const int dither = int(value(9));
     const float scale = dither == 1 ? 8388608.f : 32768.f;
-    const float quantCeiling = std::floor(ceiling * scale) / scale;
-    for (int i = 0; i < n; ++i) {
+    const float maxCode = std::floor(ceiling * scale);
+    // Lipshitz, Wannamaker & Vanderkooy 5-tap F-weighted psychoacoustic noise-shaping coefficients.
+    constexpr std::array<float, 5> lipshitz{2.033f, -2.165f, 1.959f, -1.590f, 0.6149f};
+    constexpr std::array<float, 5> lowRateShape{0.5f, 0.0f, 0.0f, 0.0f, 0.0f};
+    const auto &shaper = preparedRate >= 32000.0 ? lipshitz : lowRateShape;
+
+    int i = 0;
+    while (i < n) {
         float cross = 0;
-        if (nextPath >= 0) {
-            if (warmup > 0)
-                --warmup;
-            else
-                cross = std::min(1.f, float(++fade) / float(fadeLength));
-        }
+        if (nextPath >= 0 && warmup > 0) --warmup;
+        if (nextPath >= 0 && warmup == 0) cross = std::min(1.f, float(++fade) / float(fadeLength));
         const float bypass = bypassMix.getNextValue(), match = matchGain.getNextValue(),
                     delta = deltaMix.getNextValue();
         std::array<float, 2> protectedSample{};
-        for (int c = 0; c < channels; ++c) {
+        int c = 0;
+        while (c < channels) {
             float wet = paths[size_t(currentPath)].buffer.getSample(c, i);
             if (nextPath >= 0)
                 wet += cross * (paths[size_t(nextPath)].buffer.getSample(c, i) - wet);
             protectedSample[size_t(c)] = finite(wet);
+            ++c;
         }
         peakGuard.process(protectedSample[0], protectedSample[1], ceiling, tp);
-        for (int c = 0; c < channels; ++c) {
+        c = 0;
+        while (c < channels) {
             float wet = std::clamp(protectedSample[size_t(c)], -ceiling, ceiling);
             if (dither > 0) {
-                wet = std::round(wet * scale + randomUnit() - randomUnit()) / scale;
-                wet = std::clamp(wet, -quantCeiling, quantCeiling);
+                auto &err = ditherError[size_t(c)];
+                const float feedback = shaper[0] * err[0] + shaper[1] * err[1] + shaper[2] * err[2]
+                                     + shaper[3] * err[3] + shaper[4] * err[4];
+                const float target = wet * scale - feedback;
+                const float tpdf = randomUnit() - randomUnit();
+                const float code = std::clamp(std::round(target + tpdf), -maxCode, maxCode);
+                const float nextErr = std::clamp(code - target, -1.5f, 1.5f);
+                err[4] = err[3];
+                err[3] = err[2];
+                err[2] = err[1];
+                err[1] = err[0];
+                err[0] = nextErr;
+                wet = code / scale;
             }
             wet *= match;
             const float original = dry.getSample(c, i);
@@ -278,8 +368,10 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
             buffer.setSample(c, offset + i, output);
             metering.setSample(c, i, output);
             outPeak = std::max(outPeak, std::abs(output));
+            ++c;
         }
         meter.process(buffer.getSample(0, offset + i), channels > 1 ? buffer.getSample(1, offset + i) : 0.f);
+        ++i;
     }
     float reduction = paths[size_t(currentPath)].limiter.gainReductionDb();
     if (nextPath >= 0)
@@ -291,9 +383,15 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
     auto meteringBlock = juce::dsp::AudioBlock<float>(metering).getSubBlock(0, size_t(n));
     const auto up = peakMeter->processSamplesUp(meteringBlock);
     float truePeak = outPeak;
-    for (size_t c = 0; c < up.getNumChannels(); ++c)
-        for (size_t i = 0; i < up.getNumSamples(); ++i)
-            truePeak = std::max(truePeak, std::abs(up.getSample(int(c), int(i))));
+    size_t chIdx = 0;
+    while (chIdx < up.getNumChannels()) {
+        size_t smpIdx = 0;
+        while (smpIdx < up.getNumSamples()) {
+            truePeak = std::max(truePeak, std::abs(up.getSample(int(chIdx), int(smpIdx))));
+            ++smpIdx;
+        }
+        ++chIdx;
+    }
     const float decay = float(20. * n / preparedRate);
     inputDb.store(std::max(db(inPeak), inputDb.load() - decay));
     outputDb.store(std::max(db(outPeak), outputDb.load() - decay));

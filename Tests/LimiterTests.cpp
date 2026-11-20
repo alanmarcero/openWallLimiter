@@ -43,8 +43,8 @@ void ceilingAndLatency() {
         wall::Limiter limiter;
         limiter.prepare(rate, 1);
         const int latency = limiter.latencySamples();
-        require(latency % 16 == 0 && latency >= rate * .005 && latency < rate * .005 + 16,
-                "five millisecond latency rounded up to a multiple of 16");
+        require(latency % 16 == 0 && latency >= rate * .010 && latency < rate * .010 + 16,
+                "ten millisecond maximum lookahead latency rounded up to a multiple of 16");
         std::vector<float> impulse(latency + 32, 0);
         impulse[0] = .1f;
         limiter.process(impulse.data(), nullptr, static_cast<int>(impulse.size()));
@@ -102,14 +102,78 @@ void stereo() {
         wall::Limiter limiter;
         limiter.prepare(48000, 2);
         limiter.setSettings(s);
-        std::vector<float> left(16000, 4), right(16000, .1f);
+        std::vector<float> left(16000), right(16000);
+        std::size_t i = 0;
+        while (i < left.size()) {
+            const float carrier = std::sin(static_cast<float>(2 * 3.14159265358979 * 2000 * double(i) / 48000));
+            left[i] = 4.f * carrier;
+            right[i] = .1f * carrier;
+            ++i;
+        }
         limiter.process(left.data(), right.data(), static_cast<int>(left.size()));
-        require(left.back() <= gain(-6) + 1e-6f, "partial linking keeps loud channel safe");
-        require(right.back() <= .100001f, "partial linking never raises independent gain");
+        float leftPeak = 0, rightPeak = 0;
+        i = 12000;
+        while (i < left.size()) {
+            leftPeak = std::max(leftPeak, std::abs(left[i]));
+            rightPeak = std::max(rightPeak, std::abs(right[i]));
+            ++i;
+        }
+        require(leftPeak <= gain(-6) + 1e-5f, "partial linking keeps loud channel safe");
+        require(rightPeak <= .1001f, "partial linking never raises independent gain");
         if (link == 1)
-            require(std::abs(left.back() / right.back() - 40) < .001f, "full linking preserves stereo ratio");
+            require(std::abs(leftPeak / rightPeak - 40) < .05f, "full linking preserves stereo ratio");
         if (link == 0)
-            require(std::abs(right.back() - .1f) < 1e-6f, "unlinked quiet channel untouched");
+            require(std::abs(rightPeak - .1f) < 2e-3f, "unlinked quiet high-band channel untouched");
+    }
+    {
+        wall::Settings subSettings;
+        subSettings.ceilingDb = -6;
+        subSettings.stereoLink = 0;
+        wall::Limiter subLimiter;
+        subLimiter.prepare(48000, 2);
+        subLimiter.setSettings(subSettings);
+        std::vector<float> subL(24000), subR(24000);
+        std::size_t i = 0;
+        while (i < subL.size()) {
+            const float bass = std::sin(static_cast<float>(2 * 3.14159265358979 * 50 * double(i) / 48000));
+            subL[i] = 4.f * bass;
+            subR[i] = .1f * bass;
+            ++i;
+        }
+        subLimiter.process(subL.data(), subR.data(), static_cast<int>(subL.size()));
+        float peakL = 0, peakR = 0;
+        i = 16000;
+        while (i < subL.size()) {
+            peakL = std::max(peakL, std::abs(subL[i]));
+            peakR = std::max(peakR, std::abs(subR[i]));
+            ++i;
+        }
+        require(std::abs(peakL / peakR - 40.f) < .5f, "sub-bass stays 100% linked even at 0% stereo link");
+    }
+    {
+        wall::Settings kickHat;
+        kickHat.ceilingDb = 0;
+        kickHat.stereoLink = .5f;
+        wall::Limiter khLimiter;
+        khLimiter.prepare(48000, 2);
+        khLimiter.setSettings(kickHat);
+        std::vector<float> khL(16000), khR(16000);
+        std::size_t i = 0;
+        while (i < khL.size()) {
+            const float kick = .55f * std::sin(static_cast<float>(2 * 3.14159265358979 * 55 * double(i) / 48000));
+            const float hat = 1.8f * std::sin(static_cast<float>(2 * 3.14159265358979 * 4000 * double(i) / 48000));
+            khL[i] = kick + hat;
+            khR[i] = kick;
+            ++i;
+        }
+        khLimiter.process(khL.data(), khR.data(), static_cast<int>(khL.size()));
+        float rightKickPeak = 0;
+        i = 10000;
+        while (i < khR.size()) {
+            rightKickPeak = std::max(rightKickPeak, std::abs(khR[i]));
+            ++i;
+        }
+        require(rightKickPeak > .52f, "panned high-band stab does not duck centered sub kick");
     }
     wall::Settings s;
     s.stereoLink = 0;
@@ -125,7 +189,8 @@ void stereo() {
 }
 
 void stereoReleaseLink() {
-    auto renderRight = [](float releaseLink) {
+    int reportedLatency = 0;
+    auto renderRight = [&](float releaseLink) {
         wall::Settings settings;
         settings.mode = wall::Mode::Smooth;
         settings.ceilingDb = -6;
@@ -134,16 +199,33 @@ void stereoReleaseLink() {
         wall::Limiter limiter;
         limiter.prepare(48000, 2);
         limiter.setSettings(settings);
-        std::vector<float> left(8000, 0), right(8000, .2f);
-        left[2000] = 4;
+        reportedLatency = limiter.latencySamples();
+        std::vector<float> left(8000, 0), right(8000);
+        std::size_t i = 0;
+        while (i < right.size()) {
+            right[i] = .2f * std::sin(static_cast<float>(2 * 3.14159265358979 * 2000 * double(i) / 48000));
+            ++i;
+        }
+        i = 2000;
+        while (i < 2064) {
+            left[i] = 4.f * std::sin(static_cast<float>(2 * 3.14159265358979 * 3000 * double(i) / 48000));
+            ++i;
+        }
         limiter.process(left.data(), right.data(), static_cast<int>(left.size()));
         return right;
     };
     const auto independent = renderRight(0);
     const auto linked = renderRight(1);
-    const auto peakOutput = static_cast<std::size_t>(2000 + 240);
-    require(std::abs(independent[peakOutput] - .2f) < 1e-6f, "independent release leaves the quiet channel alone");
-    require(linked[peakOutput] < independent[peakOutput] * .9f, "release link shares the other channel's recovery attenuation");
+    float indPeak = 0, lnkPeak = 0;
+    const auto start = static_cast<std::size_t>(2064 + reportedLatency);
+    std::size_t idx = start;
+    while (idx < start + 240) {
+        indPeak = std::max(indPeak, std::abs(independent[idx]));
+        lnkPeak = std::max(lnkPeak, std::abs(linked[idx]));
+        ++idx;
+    }
+    require(std::abs(indPeak - .2f) < 2e-3f, "independent release leaves the quiet channel alone");
+    require(lnkPeak < indPeak * .9f, "release link shares the other channel's recovery attenuation");
 }
 
 void silenceInvalidAndAllocation() {
@@ -204,10 +286,35 @@ void driveUpwardModesAndRelease() {
     require(std::abs(ceilingOnly.back() - plain.back()) < 1e-7f, "ceiling does not apply makeup drive");
     s = neutral;
     s.upwardDb = 10;
-    auto lifted = render(quiet, s);
-    require(lifted.back() > plain.back() * 2.5f, "upward lifts quiet audible content");
+    std::vector<float> audibleQuiet(48000), lowHiss(48000);
+    std::size_t qIdx = 0;
+    while (qIdx < audibleQuiet.size()) {
+        const float wave = std::sin(static_cast<float>(2 * 3.14159265358979 * 1000 * double(qIdx) / 48000));
+        audibleQuiet[qIdx] = .005f * wave;
+        lowHiss[qIdx] = .0001f * wave;
+        ++qIdx;
+    }
+    const auto plainTone = render(audibleQuiet, neutral);
+    const auto lifted = render(audibleQuiet, s);
+    float plainPeak = 0, liftedPeak = 0, hissPeak = 0;
+    qIdx = 36000;
+    while (qIdx < audibleQuiet.size()) {
+        plainPeak = std::max(plainPeak, std::abs(plainTone[qIdx]));
+        liftedPeak = std::max(liftedPeak, std::abs(lifted[qIdx]));
+        ++qIdx;
+    }
+    require(liftedPeak > plainPeak * 2.5f, "upward lifts K-weighted quiet audible content");
+    const auto dcRumble = render(quiet, s);
+    require(std::abs(dcRumble.back()) <= .001001f, "K-weighted upward stage rejects DC rumble");
+    const auto expandedHiss = render(lowHiss, s);
+    qIdx = 36000;
+    while (qIdx < expandedHiss.size()) {
+        hissPeak = std::max(hissPeak, std::abs(expandedHiss[qIdx]));
+        ++qIdx;
+    }
+    require(hissPeak < .000085f, "downward expander floor below -60 LUFS attenuates hiss");
     auto noise = render(std::vector<float>(48000, 1e-7f), s);
-    require(std::abs(noise.back() - 1e-7f) < 1e-10f, "upward gate leaves deep noise alone");
+    require(std::abs(noise.back()) <= 1e-7f, "upward gate never lifts deep noise");
 
     std::vector<float> program(40000, .05f);
     for (int i = 3000; i < 6000; ++i)
@@ -241,21 +348,136 @@ void driveUpwardModesAndRelease() {
 }
 
 void anticipatedGainIsSmooth() {
-    std::vector<float> input(2000, .1f);
+    wall::Limiter probe;
+    probe.prepare(48000, 1);
+    const int latency = probe.latencySamples();
+    std::vector<float> input(3000, .1f);
     input[1000] = 10;
     wall::Settings s;
     s.mode = wall::Mode::Smooth;
-    auto output = render(input, s);
-    const int latency = 240;
-    require(output[1000] > .0999f && output[1000 + latency / 4] < .0999f,
-            "gain eases in across the full lookahead before the delayed impulse");
-    float largestStep = 0;
-    for (int i = 1001; i < 1000 + latency; ++i)
-        largestStep = std::max(largestStep, std::abs(output[i] - output[i - 1]));
-    require(largestStep < .002f, "lookahead gain changes smoothly across anticipation");
+    s.lookaheadMs = 5;
+    const auto fiveMs = render(input, s);
+    const int arrival = 1000 + latency;
+    require(fiveMs[static_cast<std::size_t>(arrival - 360)] > .0999f
+                && fiveMs[static_cast<std::size_t>(arrival - 120)] < .0999f,
+            "5 ms lookahead aligns pre-ramp to 5 ms before delayed impulse");
+    s.lookaheadMs = 10;
+    const auto tenMs = render(input, s);
+    require(tenMs[static_cast<std::size_t>(arrival - 360)] < .0995f,
+            "raising lookahead above 5 ms extends true lookahead anticipation");
+    s.lookaheadMs = 2;
+    const auto twoMs = render(input, s);
+    require(twoMs[static_cast<std::size_t>(arrival - 120)] > .0999f
+                && twoMs[static_cast<std::size_t>(arrival - 40)] < .0999f,
+            "2 ms lookahead shifts pre-ramp closer to delayed impulse");
+    float largestStep = 0, largestCurvature = 0;
+    int stepIdx = arrival - 460;
+    while (stepIdx < arrival - 1) {
+        largestStep = std::max(largestStep, std::abs(tenMs[static_cast<std::size_t>(stepIdx)] - tenMs[static_cast<std::size_t>(stepIdx - 1)]));
+        largestCurvature = std::max(
+            largestCurvature,
+            std::abs(tenMs[static_cast<std::size_t>(stepIdx + 1)] - 2.f * tenMs[static_cast<std::size_t>(stepIdx)]
+                     + tenMs[static_cast<std::size_t>(stepIdx - 1)]));
+        ++stepIdx;
+    }
+    require(largestStep < .002f && largestCurvature < 2e-5f,
+            "multi-pass cubic B-spline attack rounds window edges without slope jumps");
     s.lookaheadMs = 0;
     const auto noLookahead = render(input, s);
-    require(noLookahead[1000 + latency / 4] > .0999f, "zero lookahead does not pre-attenuate the audio before a transient");
+    require(noLookahead[static_cast<std::size_t>(arrival - 1)] > .0999f,
+            "zero lookahead does not pre-attenuate the audio before a transient");
+
+    // Verify C2 soft-knee continuity on a ramp when zero-lookahead passes signal directly to shape().
+    wall::Settings kneeSettings;
+    kneeSettings.mode = wall::Mode::Aggressive;
+    kneeSettings.ceilingDb = 0;
+    kneeSettings.clip = 1;
+    kneeSettings.lookaheadMs = 0;
+    // Prepend a brief HF transient so flux=1 stays saturated across the 2.5 ms knee sweep.
+    std::vector<float> kneeInput(220 + static_cast<std::size_t>(latency), 0.f);
+    std::size_t kIdx = 0;
+    while (kIdx < 60) {
+        const bool even = (kIdx % 2) == 0;
+        kneeInput[kIdx] = even ? .65f : -.65f;
+        ++kIdx;
+    }
+    constexpr float rampStart = .45f;
+    constexpr float rampStep = .87f / 120.f;
+    kIdx = 0;
+    while (kIdx <= 120) {
+        kneeInput[60 + kIdx] = rampStart + static_cast<float>(kIdx) * rampStep;
+        ++kIdx;
+    }
+    const auto shaped = render(kneeInput, kneeSettings);
+    float maxKneeCurvatureJump = 0;
+    float prevD2 = 0;
+    const auto checkBegin = static_cast<std::size_t>(63 + latency);
+    const auto checkEnd = static_cast<std::size_t>(178 + latency);
+    kIdx = checkBegin;
+    while (kIdx < checkEnd) {
+        const float d2 = (shaped[kIdx + 1] - 2.f * shaped[kIdx] + shaped[kIdx - 1]) / (rampStep * rampStep);
+        if (kIdx > checkBegin)
+            maxKneeCurvatureJump = std::max(maxKneeCurvatureJump, std::abs(d2 - prevD2));
+        prevD2 = d2;
+        ++kIdx;
+    }
+    require(shaped[checkEnd] < 1.f && shaped[checkEnd] > .99f && maxKneeCurvatureJump < .35f,
+            "C2 soft-knee waveshaper has no second-derivative discontinuity");
+    // Also check pure sub-bass + snare transient clip allowance and K-weighted release recovery.
+    std::vector<float> subAndSnare(48000);
+    kIdx = 0;
+    while (kIdx < subAndSnare.size()) {
+        const float sub = 1.6f * std::sin(static_cast<float>(2 * 3.14159265358979 * 50 * double(kIdx) / 48000));
+        float snare = 0.f;
+        if (kIdx >= 24000 && kIdx < 24240)
+            snare = 1.5f * std::sin(static_cast<float>(2 * 3.14159265358979 * 1800 * double(kIdx) / 48000));
+        subAndSnare[kIdx] = sub + snare;
+        ++kIdx;
+    }
+    wall::Settings clipOff = kneeSettings;
+    clipOff.lookaheadMs = 5;
+    clipOff.clip = 0;
+    wall::Settings clipOn = clipOff;
+    clipOn.clip = 1;
+    const auto limitedSnare = render(subAndSnare, clipOff);
+    const auto clippedSnare = render(subAndSnare, clipOn);
+    double snareDiff = 0;
+    kIdx = static_cast<std::size_t>(24000 + latency);
+    while (kIdx < static_cast<std::size_t>(24240 + latency)) {
+        snareDiff += std::abs(clippedSnare[kIdx] - limitedSnare[kIdx]);
+        ++kIdx;
+    }
+    require(snareDiff > .5 && std::isfinite(shaped.back()),
+            "HF transient flux preserves snare clip allowance under heavy sustained sub-bass");
+
+    // Verify K-weighted adaptive dual release does not pump vocals/hats slowly after a transient over sub-bass.
+    std::vector<float> subBed(48000);
+    kIdx = 0;
+    while (kIdx < subBed.size()) {
+        const float sub = 1.25f * std::sin(static_cast<float>(2 * 3.14159265358979 * 35 * double(kIdx) / 48000));
+        const float probeHat = .05f * std::sin(static_cast<float>(2 * 3.14159265358979 * 6000 * double(kIdx) / 48000));
+        const bool isSpike = kIdx == 20000;
+        const float spike = isSpike ? 4.f : 0.f;
+        subBed[kIdx] = sub + probeHat + spike;
+        ++kIdx;
+    }
+    wall::Settings relSettings;
+    relSettings.mode = wall::Mode::Modern;
+    relSettings.ceilingDb = 0;
+    const auto relOut = render(subBed, relSettings);
+    double steadyEnergy = 0, recoveredEnergy = 0;
+    kIdx = static_cast<std::size_t>(14400 + latency);
+    while (kIdx < static_cast<std::size_t>(19200 + latency)) {
+        steadyEnergy += double(relOut[kIdx]) * relOut[kIdx];
+        ++kIdx;
+    }
+    kIdx = static_cast<std::size_t>(20000 + latency + 4800);
+    while (kIdx < static_cast<std::size_t>(20000 + latency + 9600)) {
+        recoveredEnergy += double(relOut[kIdx]) * relOut[kIdx];
+        ++kIdx;
+    }
+    require(std::sqrt(recoveredEnergy / 4800.0) > .94 * std::sqrt(steadyEnergy / 4800.0),
+            "K-weighted RMS + crest release recovers rapidly after transient over sub-bass");
 }
 
 void sustainedBassStaysClean() {

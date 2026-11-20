@@ -8,19 +8,26 @@
 #include <juce_dsp/juce_dsp.h>
 namespace checks {
 inline int referenceLatency(double sampleRate, int block) {
-    sampleRate = std::isfinite(sampleRate) ? std::clamp(sampleRate, 8000.0, 192000.0) : 48000.0;
+    if (std::isfinite(sampleRate)) sampleRate = std::clamp(sampleRate, 8000.0, 192000.0);
+    if (!std::isfinite(sampleRate)) sampleRate = 48000.0;
     const int chunk = std::clamp(block, 32, 4096);
+    analog_master::core::MultiPoleFilter subCut{analog_master::core::FilterType::HighPass};
+    subCut.setLinearPhaseSubCut(true);
+    subCut.prepare(sampleRate);
     int latency = 0;
-    for (int i = 0; i < 5; ++i) {
-        juce::dsp::Oversampling<float> oversampler(2, i, juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple,
+    int i = 0;
+    while (i < 5) {
+        juce::dsp::Oversampling<float> oversampler(2, size_t(i),
+                                                   juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple,
                                                    true, true);
         oversampler.initProcessing(size_t(chunk));
         wall::Limiter limiter;
         limiter.prepare(sampleRate * double(1 << i), 2);
         const float native = float(limiter.latencySamples()) / float(1 << i) + oversampler.getLatencyInSamples();
         latency = std::max(latency, int(std::ceil(native)));
+        ++i;
     }
-    return latency + wall::TruePeakGuard::delaySamples;
+    return subCut.latencySamples() + latency + WallProcessor::sincPadHalfSpan + wall::TruePeakGuard::delaySamples;
 }
 inline void latencyAndTargets() {
     require(wall::TruePeakGuard::delaySamples == 128, "true-peak guard is not 128 samples");

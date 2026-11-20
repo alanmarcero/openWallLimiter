@@ -67,6 +67,7 @@ class WallProcessor final : public juce::AudioProcessor {
     static constexpr int minEditorHeight = 680;
     static constexpr int maxEditorWidth = 2560;
     static constexpr int maxEditorHeight = 1800;
+    static constexpr int sincPadHalfSpan = 16;
     juce::AudioProcessorValueTreeState parameters;
     juce::UndoManager undoManager;
     suite::ParameterUndo parameterUndo;
@@ -79,10 +80,22 @@ class WallProcessor final : public juce::AudioProcessor {
   private:
     using Oversampler = juce::dsp::Oversampling<float>;
     using Delay = juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear>;
+    struct SincPad {
+        static constexpr int tapsCount = 2 * sincPadHalfSpan;
+        std::array<std::vector<float>, 2> rings{};
+        std::array<std::size_t, 2> positions{};
+        std::array<double, tapsCount> taps{};
+        std::size_t mask = 0;
+        int baseLag = 0, intDelay = 0;
+        bool exactInteger = true;
+        void prepare(int maxSamples, float delaySamples);
+        void reset() noexcept;
+        float process(int channel, float sample) noexcept;
+    };
     struct Path {
         std::unique_ptr<Oversampler> oversampler;
         wall::Limiter limiter;
-        Delay pad;
+        SincPad pad;
         juce::AudioBuffer<float> buffer;
         float nativeLatency = 0;
     };
@@ -102,9 +115,10 @@ class WallProcessor final : public juce::AudioProcessor {
     wall::TruePeakGuard peakGuard;
     juce::SmoothedValue<float> bypassMix, matchGain, deltaMix;
     std::array<float, 2> tiltState{0.0f, 0.0f};
+    std::array<std::array<float, 5>, 2> ditherError{};
     std::atomic<bool> meterReset{false};
-    int channels = 2, chunkSize = 512, latency = 0, currentPath = 2, nextPath = -1, warmup = 0, fade = 0,
-        fadeLength = 960;
+    int channels = 2, chunkSize = 512, latency = 0, pathLatency = 0, currentPath = 2, nextPath = -1, warmup = 0,
+        fade = 0, fadeLength = 960;
     ArtworkBeatClock artworkClock;
     double preparedRate = 48000;
     bool ready = false;

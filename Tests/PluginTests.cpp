@@ -29,7 +29,114 @@ int main(int argc, char **argv) {
         const int fixedLatency = p.getLatencySamples();
         set(p, "lookahead_ms", 0.0f);
         require(p.getLatencySamples() == fixedLatency, "lookahead automation keeps host latency fixed");
+        set(p, "lookahead_ms", 10.0f);
+        require(std::abs(p.parameters.getRawParameterValue("lookahead_ms")->load() - 10.0f) < .02f,
+                "lookahead parameter supports 10 ms range");
+        require(p.getLatencySamples() == fixedLatency, "10 ms lookahead keeps host latency fixed");
         set(p, "lookahead_ms", 5.0f);
+
+        // Verify linear-phase pre-limiter HPF avoids phase-rotation peak overshoot on 55 Hz square bass.
+        {
+            WallProcessor linHp;
+            checks::neutral(linHp);
+            set(linHp, "highpass_on", 1);
+            set(linHp, "highpass_hz", 30.0f);
+            set(linHp, "highpass_slope", 3.0f);
+            linHp.prepareToPlay(48000, 256);
+            std::vector<float> sq(16000, 0.0f);
+            float maxIn = 0.0f;
+            int idx = 0;
+            while (idx < static_cast<int>(sq.size())) {
+                float sum = 0.0f;
+                int harm = 1;
+                while (harm <= 23) {
+                    sum += std::sin(float(2.0 * 3.141592653589793 * 55.0 * harm * idx / 48000.0)) / float(harm);
+                    harm += 2;
+                }
+                sq[static_cast<size_t>(idx)] = sum;
+                maxIn = std::max(maxIn, std::abs(sum));
+                ++idx;
+            }
+            std::ranges::for_each(sq, [maxIn](float &v) { v *= .70f / maxIn; });
+            const auto filteredSq = checks::render(linHp, sq, 256);
+            float maxOut = 0.0f;
+            size_t tailIdx = 8000;
+            while (tailIdx < filteredSq.size()) {
+                maxOut = std::max(maxOut, std::abs(filteredSq[tailIdx]));
+                ++tailIdx;
+            }
+            require(maxOut < .72f, "pre-limiter HPF phase rotation causes crest overshoot");
+        }
+
+        // Verify TruePeakGuard wastes 0 dB ceiling reserve at 0.0 dBTP.
+        {
+            require(std::abs(wall::TruePeakGuard::reserveDb) < 1e-6f, "true-peak guard still reserves static headroom");
+            WallProcessor tpExact;
+            checks::neutral(tpExact);
+            set(tpExact, "true_peak", 1);
+            set(tpExact, "ceiling", 0.0f);
+            tpExact.prepareToPlay(48000, 256);
+            const auto loudOut = checks::render(tpExact, checks::tone(16000, 48000, 1000, .992f), 256);
+            require(checks::rmsTail(loudOut) > .695, "true-peak guard wastes ceiling loudness");
+        }
+
+        // Verify F-weighted psychoacoustic noise-shaped dither pushes quantization energy above 15 kHz.
+        {
+            WallProcessor shapedDither;
+            checks::neutral(shapedDither);
+            set(shapedDither, "dither", 2.0f);
+            shapedDither.prepareToPlay(48000, 256);
+            const auto ditherOut = checks::render(shapedDither, std::vector<float>(16384, 0.0f), 256);
+            double earBand = 0.0, ultrasonicBand = 0.0;
+            int bin = 1;
+            while (bin < 64) {
+                const double freqMid = 2000.0 + 35.0 * bin;
+                const double freqHi = 16500.0 + 95.0 * bin;
+                double reM = 0.0, imM = 0.0, reH = 0.0, imH = 0.0;
+                size_t nIdx = 8192;
+                while (nIdx < 12288) {
+                    const double sampleVal = ditherOut[nIdx];
+                    const double phM = 2.0 * 3.141592653589793 * freqMid * double(nIdx) / 48000.0;
+                    const double phH = 2.0 * 3.141592653589793 * freqHi * double(nIdx) / 48000.0;
+                    reM += sampleVal * std::cos(phM);
+                    imM += sampleVal * std::sin(phM);
+                    reH += sampleVal * std::cos(phH);
+                    imH += sampleVal * std::sin(phH);
+                    ++nIdx;
+                }
+                earBand += reM * reM + imM * imM;
+                ultrasonicBand += reH * reH + imH * imH;
+                ++bin;
+            }
+            require(ultrasonicBand > 8.0 * earBand, "dither is flat TPDF rather than psychoacoustically noise-shaped");
+        }
+
+        // Verify matched-phase oversampling crossfade avoids high-frequency comb cancellation.
+        {
+            WallProcessor xfade;
+            checks::neutral(xfade);
+            set(xfade, "oversampling", 0.0f);
+            xfade.prepareToPlay(48000, 256);
+            const auto hfTone = checks::tone(24000, 48000, 14000, .1f);
+            std::vector<float> firstHalf(hfTone.begin(), hfTone.begin() + 10000);
+            std::vector<float> secondHalf(hfTone.begin() + 10000, hfTone.end());
+            checks::render(xfade, firstHalf, 256);
+            set(xfade, "oversampling", 3.0f);
+            const auto faded = checks::render(xfade, secondHalf, 256);
+            double minWindowRms = 1.0;
+            size_t winStart = 0;
+            while (winStart + 256 <= faded.size()) {
+                double e = 0.0;
+                size_t k = 0;
+                while (k < 256) {
+                    e += double(faded[winStart + k]) * faded[winStart + k];
+                    ++k;
+                }
+                minWindowRms = std::min(minWindowRms, std::sqrt(e / 256.0));
+                winStart += 128;
+            }
+            require(minWindowRms > .063, "oversampling crossfade phase mismatch causes HF comb dip");
+        }
         juce::AudioBuffer<float> b(2, 256);
         juce::MidiBuffer midi;
         for (int j = 0; j < 100; j++) {
