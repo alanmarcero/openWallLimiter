@@ -1,3 +1,11 @@
+# openWallLimiter 1.10.0
+
+Upgrades the limiter core, pre-limiter filtering, true-peak protection, and output dither:
+
+- **Limiter core & stereo linking:** Expands maximum lookahead to 10 ms (with fixed reported host latency across lookahead, oversampling, and true-peak settings), adds frequency-dependent stereo linking that keeps sub-bass 100% linked, and refines dual-stage release and transient clip allowance.
+- **Linear-phase sub-cut:** Adds linear-phase sub-bass filtering to avoid phase-induced peak inflation.
+- **True-peak guard & shaped dither:** Upgrades the 128-sample true-peak guard and adds Off, 24-bit, and 16-bit psychoacoustic noise-shaped TPDF dither options.
+
 # openWallLimiter 1.9.1
 
 The v1.9.0 tag build never started. The release workflow now allows the build workflow's preview job to request contents write, which GitHub checks before any job starts. The publish job still uses contents write and does not send a commit SHA as the release target.
