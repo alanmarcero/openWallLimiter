@@ -71,7 +71,7 @@ private:
     std::vector<double> decTaps_;
     std::vector<double> interpTaps_;
     std::array<double, kSubTaps> subTaps_{};
-    std::array<std::array<double, kDftHalf + 1>, kSubHalf + 1> cosBasis_{};
+    std::vector<std::array<double, kDftHalf + 1>> cosBasis_{static_cast<std::size_t>(kSubHalf + 1)};
     std::array<LinearChannel, 2> linearChannels_{};
     std::array<std::array<BiquadFilter, kMaxSections>, 2> filters_{};
 };
