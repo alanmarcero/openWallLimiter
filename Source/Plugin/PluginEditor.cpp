@@ -165,15 +165,15 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     combo("highpass_slope", wall::slopeNames);
     combo("lowpass_slope", wall::slopeNames);
     combo("oversampling", {"Off", "2x", "4x", "8x", "16x"});
-    combo("dither", {"Off", "24-bit TPDF", "16-bit TPDF"});
+    combo("dither", {"Off", "24-bit Shaped", "16-bit Shaped"});
     toggle("highpass_on", "High pass");
     toggle("lowpass_on", "Low pass");
     toggle("true_peak", "True peak");
     toggle("gain_match", "Gain match");
     toggle("delta", "Delta");
     toggle("bypass", "Bypass");
-    buttons["true_peak"]->setTooltip("Uses at least 4x processing and a final reconstructed-peak lookahead "
-                                     "guard and 0.3 dB headroom. Meter is a 4x true-peak estimate.");
+    buttons["true_peak"]->setTooltip("Uses at least 4x processing and a brickwall 16-phase reconstructed-peak "
+                                     "lookahead guard with zero ceiling reserve. Meter is a 4x true-peak estimate.");
     buttons["delta"]->setTooltip("Listen to processed output minus the latency-aligned original. This "
                                  "monitoring signal can exceed the output ceiling.");
     buttons["gain_match"]->setTooltip("Remove threshold makeup gain for level-matched comparison.");

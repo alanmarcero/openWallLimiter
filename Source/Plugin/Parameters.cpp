@@ -1,3 +1,4 @@
+#include "Limiter.h"
 #include "LoudnessTarget.h"
 #include "Parameters.h"
 namespace wall {
@@ -24,7 +25,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     number("stereo_link", "Transient Link", 0, 100, .1f, 100, 1, "%");
     choice("oversampling", "Oversampling", {"Off", "2x", "4x", "8x", "16x"}, 2);
     boolean("true_peak", "True Peak", true);
-    choice("dither", "Dither", {"Off", "24-bit TPDF", "16-bit TPDF"}, 0);
+    choice("dither", "Dither", {"Off", "24-bit Shaped", "16-bit Shaped"}, 0);
     boolean("gain_match", "Gain Match", false);
     boolean("delta", "Delta", false);
     boolean("bypass", "Bypass", false);
@@ -34,7 +35,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     number("lowpass_hz", "Low Pass Frequency", 8000, 24000, 10, 20000, 1, "Hz");
     choice("lowpass_slope", "Low Pass Slope", slopeNames, 3);
     boolean("lowpass_on", "Low Pass", true);
-    number("lookahead_ms", "Lookahead", 0, 5, .01f, 5, 1, "ms");
+    number("lookahead_ms", "Lookahead", 0, Limiter::maxLookaheadMs, .01f, 5, 1, "ms");
     number("release_link", "Release Link", 0, 100, .1f, 100, 1, "%");
     number("input_gain", "Input Drive", -12, 12, .1f, 0, 1, "dB");
     number("stereo_width", "Stereo Width", 0, 200, .5f, 100, 1, "%");
