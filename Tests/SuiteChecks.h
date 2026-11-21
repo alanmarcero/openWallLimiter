@@ -413,6 +413,15 @@ inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &ed
             "A/B copy or library button missing");
     require(find(editor, "lufs_mode") && find(editor, "lufs_target") && find(editor, "lufs_match"),
             "loudness target controls missing");
+    auto *ceiling = dynamic_cast<juce::Slider *>(find(editor, "ceiling"));
+    require(std::abs(ceiling->valueToProportionOfLength(-3.0) - .5) < .01,
+            "Ceiling travel is not centred on -3 dB");
+    require(ceiling->getPositionOfValue(-1.0) - ceiling->getPositionOfValue(0.0) >= 20.f,
+            "the top 1 dB of Ceiling travel is shorter than 20 px");
+    require(processor.parameters.getParameter("ceiling")->getNormalisableRange().skew == 1.f,
+            "Ceiling parameter skew changed");
+    require(ceiling->getVelocityModeIsSwappable() && !ceiling->getVelocityBasedMode(),
+            "Shift-drag fine mode missing");
     const auto hostName = [&](const char *id) { return processor.parameters.getParameter(id)->getName(64); };
     std::ranges::for_each(std::array{"release", "clip", "upward", "stereo_link", "release_link", "lookahead_ms",
                                      "input_gain", "stereo_width", "tone_tilt"},

@@ -168,6 +168,8 @@ void WallEditor::slider(const char *id, bool rotary) {
     s->setSliderStyle(rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
     s->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 96, 25);
     s->setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
+    // Shift-drag uses JUCE's velocity mode as a fine drag, about one fifth of the normal speed.
+    s->setVelocityModeParameters(1.0, 1, .05, true, juce::ModifierKeys::shiftModifier);
     s->setTooltip(juce::String(id) + ": drag to adjust, double-click to reset, or type a value.");
     content.addAndMakeVisible(*s);
     sliderAttachments.push_back(std::make_unique<SliderAttachment>(wallProcessor.parameters, id, *s));
@@ -217,6 +219,10 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     slider("lowpass_hz", false);
     for (auto id : {"highpass_hz", "lowpass_hz"})
         sliders[id]->setSliderStyle(juce::Slider::LinearHorizontal);
+    // A UI-only skew puts -3 dB at the middle of the Ceiling travel. The parameter range stays linear.
+    juce::NormalisableRange<double> ceilingTravel(-30.0, 0.0, 0.01);
+    ceilingTravel.setSkewForCentre(-3.0);
+    sliders["ceiling"]->setNormalisableRange(ceilingTravel);
     combo("highpass_slope", wall::slopeNames);
     combo("lowpass_slope", wall::slopeNames);
     combo("oversampling", {"Off", "2x", "4x", "8x", "16x"});
@@ -658,6 +664,20 @@ void WallEditor::paintContent(juce::Graphics &g) {
     text(g, "Pre-limiter low-pass", {866, 170, 220, 18}, 11, muted, juce::Justification::centredRight);
     box(g, {24, 255, 166, 290});
     box(g, {930, 255, 166, 290});
+    // dB ticks follow each fader's own scale.
+    const std::array<std::tuple<const char *, std::array<int, 6>, int, int, int>, 2> faderTicks{{
+        {"threshold", {0, -6, -12, -18, -24, -30}, 82, 50, juce::Justification::centredRight},
+        {"ceiling", {0, -1, -2, -3, -6, -30}, 1040, 1050, juce::Justification::centredLeft}}};
+    std::ranges::for_each(faderTicks, [&](const auto &fader) {
+        const auto &[id, values, tickX, labelX, justify] = fader;
+        const auto &slider = *sliders.at(id);
+        std::ranges::for_each(values, [&](int value) {
+            const int y = slider.getY() + juce::roundToInt(slider.getPositionOfValue(value));
+            g.setColour(muted);
+            g.drawHorizontalLine(y, float(tickX), float(tickX + 6));
+            text(g, juce::String(value), {labelX, y - 7, 30, 14}, 10, muted, justify);
+        });
+    });
     const std::array<std::tuple<const char *, juce::Rectangle<int>, float, juce::Colour, int>, 6> captions{{
         {"mode", {35, 204, 180, 25}, 17, brass, juce::Justification::centredLeft},
         {"threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred},
