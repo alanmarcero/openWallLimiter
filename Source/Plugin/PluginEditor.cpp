@@ -696,7 +696,7 @@ void WallEditor::resized() {
     inputLevel.setBounds(40, 570, 140, 50);
     outputLevel.setBounds(948, 570, 140, 50);
     guidance.setBounds(584, 695, 512, 24);
-    monitoring.setBounds(456, 504, 424, 22);
+    monitoring.setBounds(472, 504, 308, 22);
     if (presetBrowser)
         presetBrowser->setBounds(690, 88, 406, 560);
     juce::AudioProcessorEditor::resized();
