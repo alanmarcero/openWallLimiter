@@ -5,11 +5,12 @@
 #include "suite/PresetLibrary.h"
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <tuple>
 #include <vector>
 namespace {
 const juce::Colour ink{0xff0d1317}, panel{0xff152026}, brass{0xffffbe3b}, paper{0xffe6f0f5},
-    muted{0xff869ca8}, blue{0xff48f0c8}, red{0xffef7353};
+    muted{0xff869ca8}, blue{0xff48f0c8}, red{0xffef7353}, ledOff{0xff2d3a33};
 juce::Font font(float size, bool bold = false) {
     return juce::Font(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain));
 }
@@ -36,16 +37,19 @@ Readout::Readout(const char *id, const juce::String &caption, float valueSize) :
     setComponentID(id);
     setTitle(caption);
 }
-void Readout::show(const juce::String &shown, juce::Colour shownColour) {
-    if (shown == value && shownColour == colour)
+void Readout::show(const juce::String &shown, juce::Colour shownColour, juce::Colour shownLed) {
+    if (shown == value && shownColour == colour && shownLed == led)
         return;
     value = shown;
     colour = shownColour;
+    led = shownLed;
     repaint();
 }
 void Readout::paint(juce::Graphics &g) {
     text(g, getTitle(), getLocalBounds().withHeight(19), 12, muted);
     text(g, value, getLocalBounds().withTrimmedTop(21), size, colour);
+    g.setColour(led);
+    g.fillEllipse(float(getWidth()) - 14.f, 27.f, 8.f, 8.f);
 }
 void Readout::mouseUp(const juce::MouseEvent &e) {
     if (onClick != nullptr && contains(e.getPosition()))
@@ -194,8 +198,8 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     addAndMakeVisible(content);
     ceilingMark = juce::Drawable::createFromImageData(BinaryData::ceilingmeter_svg, BinaryData::ceilingmeter_svgSize);
     fortress = juce::ImageCache::getFromMemory(BinaryData::fortress_png, BinaryData::fortress_pngSize);
-    inputHistory.fill(-60);
-    outputHistory.fill(-60);
+    inputHistory.fill(-100);
+    outputHistory.fill(-100);
     reductionHistory.fill(0);
     slider("threshold", false);
     slider("ceiling", false);
@@ -303,7 +307,10 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     content.addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
     reset.setTitle("Reset meters");
-    reset.onClick = [this] { wallProcessor.resetMeters(); };
+    reset.onClick = [this] {
+        wallProcessor.resetMeters();
+        inputClipped = outputClipped = false;
+    };
     content.addAndMakeVisible(reset);
     link.setTitle("Link levels");
     link.setClickingTogglesState(true);
@@ -368,6 +375,13 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     content.addChildComponent(*presetBrowser);
     const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
     std::ranges::for_each(readouts, [this](Readout *readout) { content.addAndMakeVisible(readout); });
+    gainReduction.setTooltip("Highest gain reduction in the last second.");
+    inputLevel.setTooltip("Highest input peak in the last second. "
+                          "The dot stays red after a peak above 0 dBFS. Click to clear it.");
+    outputLevel.setTooltip("Highest output peak in the last second. "
+                           "The dot stays red after a peak above 0 dBFS. Click to clear it.");
+    inputLevel.onClick = [this] { inputClipped = false; };
+    outputLevel.onClick = [this] { outputClipped = false; };
     guidance.setComponentID("loudness_guidance");
     guidance.setFont(font(12));
     guidance.setColour(juce::Label::textColourId, paper);
@@ -407,7 +421,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
                     WallProcessor::maxEditorHeight);
     setSize(width, height);
     timerCallback();
-    startTimerHz(30);
+    startTimerHz(refreshHz);
 }
 bool WallEditor::keyPressed(const juce::KeyPress &key) {
     const auto command = juce::ModifierKeys::commandModifier;
@@ -426,9 +440,20 @@ WallEditor::~WallEditor() {
     setLookAndFeel(nullptr);
 }
 void WallEditor::timerCallback() {
-    inputHistory[size_t(cursor)] = wallProcessor.inputDb.load();
-    outputHistory[size_t(cursor)] = wallProcessor.outputDb.load();
-    reductionHistory[size_t(cursor)] = wallProcessor.reductionDb.load();
+    const auto now = size_t(cursor);
+    const auto last = (now + inputHistory.size() - 1) % inputHistory.size();
+    const float input = wallProcessor.inputDb.exchange(WallProcessor::noReading);
+    const float output = wallProcessor.outputDb.exchange(WallProcessor::noReading);
+    const float reduction = wallProcessor.reductionDb.exchange(WallProcessor::noReading);
+    // A tick without a new audio block repeats the last point.
+    inputHistory[now] = input > WallProcessor::noReading ? input : inputHistory[last];
+    outputHistory[now] = output > WallProcessor::noReading ? output : outputHistory[last];
+    reductionHistory[now] = reduction > WallProcessor::noReading ? reduction : reductionHistory[last];
+    inputHold.push(inputHistory[now]);
+    outputHold.push(outputHistory[now]);
+    reductionHold.push(reductionHistory[now]);
+    inputClipped = inputClipped || inputHistory[now] > 0.f;
+    outputClipped = outputClipped || outputHistory[now] > 0.f;
     cursor = (cursor + 1) % int(inputHistory.size());
     const int active = int(wallProcessor.parameters.getRawParameterValue("mode")->load());
     for (size_t i = 0; i < modes.size(); ++i)
@@ -439,12 +464,18 @@ void WallEditor::timerCallback() {
     abB.setToggleState(wallProcessor.activeAB() == 1, juce::dontSendNotification);
     const int lufsMode = int(std::lround(wallProcessor.parameters.getRawParameterValue("lufs_mode")->load()));
     const float custom = wallProcessor.parameters.getRawParameterValue("lufs_target")->load();
-    gainReduction.show(reading(wallProcessor.reductionDb.load(), " dB"), red);
+    gainReduction.show(reading(reductionHold.value, " dB"), red);
     shortTerm.show(reading(wallProcessor.shortLufs.load(), " LUFS"), paper);
     integrated.show(reading(wallProcessor.integratedLufs.load(), " LUFS"), paper);
-    truePeak.show(reading(wallProcessor.truePeakDb.load(), " dBTP"), paper);
-    inputLevel.show(reading(wallProcessor.inputDb.load(), " dB"), blue);
-    outputLevel.show(reading(wallProcessor.outputDb.load(), " dB"), brass);
+    const float tp = wallProcessor.truePeakDb.load();
+    auto tpLed = ledOff;
+    if (tp > -1.f)
+        tpLed = brass;
+    if (tp > 0.f)
+        tpLed = red;
+    truePeak.show(reading(tp, " dBTP"), paper, tpLed);
+    inputLevel.show(reading(inputHold.value, " dB"), blue, inputClipped ? red : ledOff);
+    outputLevel.show(reading(outputHold.value, " dB"), brass, outputClipped ? red : ledOff);
     guidance.setText(wall::loudnessGuidance(lufsMode, custom, wallProcessor.integratedLufs.load(),
                                             wallProcessor.shortLufs.load()),
                      juce::dontSendNotification);
@@ -452,7 +483,7 @@ void WallEditor::timerCallback() {
     matchLoudness.setEnabled(lufsMode != 0);
     if (!presets.isPopupActive() && presets.getSelectedItemIndex() != wallProcessor.getCurrentProgram())
         presets.setSelectedItemIndex(wallProcessor.getCurrentProgram(), juce::dontSendNotification);
-    content.repaint(200, 260, 700, 265);
+    content.repaint(240, 323, 640, 173);
     content.repaint(20, 10, 56, 56);
     content.repaint(24, 800, 1072, 24);
 }
@@ -525,36 +556,48 @@ void WallEditor::drawGraph(juce::Graphics &g) {
     juce::Rectangle<float> r{240, 323, 640, 173};
     g.setColour(juce::Colour(0xff0d1214));
     g.fillRoundedRectangle(r, 4);
+    // Levels span -24 dBFS at the bottom to 0 dBFS at the top.
+    // Gain reduction hangs from the top on its own 0 to 12 dB scale.
     const auto y = [&](float v) {
-        return r.getBottom() - std::clamp((v + 48.f) / 48.f, 0.f, 1.f) * r.getHeight();
+        return r.getBottom() - std::clamp((v + 24.f) / 24.f, 0.f, 1.f) * r.getHeight();
     };
-    for (int dbLine = -36; dbLine <= 0; dbLine += 12) {
-        g.setColour(juce::Colour(0xff283232));
-        g.drawHorizontalLine(int(y(float(dbLine))), r.getX(), r.getRight());
-        text(g, juce::String(dbLine), {208, int(y(float(dbLine))) - 8, 28, 16}, 10, muted,
+    const auto depth = [&](float v) { return r.getY() + std::clamp(v / 12.f, 0.f, 1.f) * r.getHeight(); };
+    g.setColour(juce::Colour(0xff283232));
+    std::ranges::for_each(std::array{-18.f, -12.f, -6.f, 0.f},
+                          [&](float level) { g.drawHorizontalLine(int(y(level)), r.getX(), r.getRight()); });
+    std::ranges::for_each(std::array{0, -6, -12, -18, -24}, [&](int level) {
+        text(g, juce::String(level), {208, int(y(float(level))) - 8, 28, 16}, 10, muted,
              juce::Justification::centredRight);
-    }
+    });
+    std::ranges::for_each(std::array{0, 3, 6, 12}, [&](int reduction) {
+        text(g, juce::String(reduction), {884, int(depth(float(reduction))) - 8, 28, 16}, 10, red);
+    });
     for (int i = 1; i < 8; ++i) {
         g.setColour(juce::Colour(0xff20292a));
         g.drawVerticalLine(int(r.getX() + float(i) * 80), r.getY(), r.getBottom());
     }
-    const auto draw = [&](const auto &history, juce::Colour colour, bool reduction) {
+    const auto trace = [&](const auto &history, const auto &toY) {
         juce::Path line;
-        for (size_t i = 0; i < history.size(); ++i) {
-            float v = history[(size_t(cursor) + i) % history.size()];
-            float xx = r.getX() + float(i) * r.getWidth() / float(history.size() - 1);
-            float yy = reduction ? r.getY() + std::clamp(v / 24.f, 0.f, 1.f) * r.getHeight() : y(v);
-            if (i == 0)
-                line.startNewSubPath(xx, yy);
-            else
-                line.lineTo(xx, yy);
-        }
-        g.setColour(colour);
-        g.strokePath(line, juce::PathStrokeType(reduction ? 1.4f : 1.8f));
+        line.startNewSubPath(r.getX(), toY(history[size_t(cursor)]));
+        std::ranges::for_each(std::views::iota(size_t{1}, history.size()), [&](size_t i) {
+            line.lineTo(r.getX() + float(i) * r.getWidth() / float(history.size() - 1),
+                        toY(history[(size_t(cursor) + i) % history.size()]));
+        });
+        return line;
     };
-    draw(inputHistory, blue.withAlpha(.6f), false);
-    draw(outputHistory, brass, false);
-    draw(reductionHistory, red, true);
+    const auto reduction = trace(reductionHistory, depth);
+    auto band = reduction;
+    band.lineTo(r.getRight(), r.getY());
+    band.lineTo(r.getX(), r.getY());
+    band.closeSubPath();
+    g.setColour(red.withAlpha(.2f));
+    g.fillPath(band);
+    g.setColour(red);
+    g.strokePath(reduction, juce::PathStrokeType(1.4f));
+    g.setColour(blue.withAlpha(.6f));
+    g.strokePath(trace(inputHistory, y), juce::PathStrokeType(1.8f));
+    g.setColour(brass);
+    g.strokePath(trace(outputHistory, y), juce::PathStrokeType(1.8f));
     const float ceiling = wallProcessor.parameters.getRawParameterValue("ceiling")->load();
     g.setColour(brass.withAlpha(.3f));
     const float dash[]{4, 4};
@@ -602,14 +645,6 @@ void WallEditor::paintContent(juce::Graphics &g) {
         const auto &[id, area, size, colour, justify] = caption;
         text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size, colour, justify);
     });
-    const float tp = wallProcessor.truePeakDb.load();
-    const bool tpClip = tp > 0.0f;
-    g.setColour(tpClip ? red : (tp > -1.0f ? brass : juce::Colour(0xff2d3a33)));
-    g.fillEllipse(886.0f, 292.0f, 8.0f, 8.0f);
-    if (tpClip) {
-        g.setColour(red.withAlpha(0.4f));
-        g.drawEllipse(884.0f, 290.0f, 12.0f, 12.0f, 1.2f);
-    }
     drawGraph(g);
     std::ranges::for_each(knobIds, [&](const char *id) {
         const auto name = wallProcessor.parameters.getParameter(id)->getName(64);

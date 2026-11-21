@@ -20,14 +20,14 @@ class Readout final : public juce::Component, public juce::SettableTooltipClient
   public:
     Readout(const char *id, const juce::String &caption, float valueSize);
     std::function<void()> onClick;
-    void show(const juce::String &shown, juce::Colour shownColour);
+    void show(const juce::String &shown, juce::Colour shownColour, juce::Colour shownLed = {});
     void paint(juce::Graphics &) override;
     void mouseUp(const juce::MouseEvent &) override;
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
   private:
     juce::String value;
-    juce::Colour colour;
+    juce::Colour colour, led;
     float size;
 };
 class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer {
@@ -42,6 +42,19 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    static constexpr int refreshHz = 30;
+    // Holds the highest reading for one second of editor ticks.
+    struct PeakHold {
+        float value;
+        int age = 0;
+        void push(float peak) noexcept {
+            ++age;
+            if (peak < value && age <= refreshHz)
+                return;
+            value = peak;
+            age = 0;
+        }
+    };
     void timerCallback() override;
     void slider(const char *id, bool rotary);
     void combo(const char *id, const juce::StringArray &);
@@ -80,6 +93,8 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     std::unique_ptr<suite::PresetBrowser> presetBrowser;
     juce::TooltipWindow tooltip{this, 650};
     std::array<float, 240> inputHistory{}, outputHistory{}, reductionHistory{};
+    PeakHold inputHold{-100}, outputHold{-100}, reductionHold{0};
+    bool inputClipped = false, outputClipped = false;
     int cursor = 0;
     double lastThreshold = 0, lastCeiling = -1;
     bool linking = false;

@@ -18,6 +18,7 @@ int main(int argc, char **argv) {
         checks::latencyAndTargets();
         checks::suiteBehavior();
         checks::typedValues();
+        checks::meters();
         checks::routing();
         checks::quality();
         WallProcessor p;

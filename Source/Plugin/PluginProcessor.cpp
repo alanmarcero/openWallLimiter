@@ -17,6 +17,12 @@ float db(float x) {
 float finite(float x) {
     return std::isfinite(x) ? std::clamp(x, -64.f, 64.f) : 0.f;
 }
+// Keeps the largest value until the editor swaps it out.
+void raise(std::atomic<float> &peak, float value) noexcept {
+    float current = peak.load(std::memory_order_relaxed);
+    while (value > current && !peak.compare_exchange_weak(current, value, std::memory_order_relaxed)) {
+    }
+}
 } // namespace
 WallProcessor::WallProcessor()
     : AudioProcessor(BusesProperties()
@@ -392,10 +398,9 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
         }
         ++chIdx;
     }
-    const float decay = float(20. * n / preparedRate);
-    inputDb.store(std::max(db(inPeak), inputDb.load() - decay));
-    outputDb.store(std::max(db(outPeak), outputDb.load() - decay));
-    reductionDb.store(reduction);
+    raise(inputDb, db(inPeak));
+    raise(outputDb, db(outPeak));
+    raise(reductionDb, reduction);
     truePeakDb.store(std::max(db(truePeak), truePeakDb.load()));
     shortLufs.store(meter.shortTermLufs());
     integratedLufs.store(meter.integratedLufs());

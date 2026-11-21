@@ -6,6 +6,7 @@
 #include "suite/PresetLibrary.h"
 #include <cmath>
 #include <juce_dsp/juce_dsp.h>
+#include <ranges>
 namespace checks {
 inline int referenceLatency(double sampleRate, int block) {
     if (std::isfinite(sampleRate)) sampleRate = std::clamp(sampleRate, 8000.0, 192000.0);
@@ -261,6 +262,40 @@ inline void typedValues() {
     require(std::abs(typed("lookahead_ms", "2.5 ms") - 2.5f) < .01f, "ms suffix");
     require(std::abs(typed("threshold", "-6.5 dB") - typed("threshold", "-6.5")) < .001f, "dB suffix");
     std::cout << "PASS typed values and display formats\n";
+}
+inline void meters() {
+    WallProcessor p;
+    neutral(p);
+    set(p, "threshold", -12.f);
+    p.prepareToPlay(48000, 256);
+    auto editor = std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
+    auto burst = tone(48000, 48000, 1000, .9f);
+    std::fill(burst.begin() + 2048, burst.end(), 0.f);
+    render(p, burst, 256);
+    require(p.reductionDb.load() > 6.f, "gain reduction meter lost the burst before the editor read it");
+    const auto tick = [] {
+        juce::Thread::sleep(36);
+        juce::Timer::callPendingTimersSynchronously();
+    };
+    const auto shown = [&] {
+        const auto handler = find(*editor, "gain_reduction")->createAccessibilityHandler();
+        return handler->getValueInterface()->getCurrentValueAsString().getFloatValue();
+    };
+    tick();
+    const float held = shown();
+    require(held > 6.f, "gain reduction readout missed the burst");
+    require(p.reductionDb.load() <= WallProcessor::noReading, "editor read did not reset the peak");
+    std::ranges::for_each(std::views::iota(0, 5), [&](int) {
+        render(p, std::vector<float>(512, 0.f), 256);
+        tick();
+    });
+    require(std::abs(shown() - held) < .05f, "gain reduction readout did not hold its peak");
+    std::ranges::for_each(std::views::iota(0, 30), [&](int) {
+        render(p, std::vector<float>(512, 0.f), 256);
+        tick();
+    });
+    require(shown() < 1.f, "gain reduction readout held its peak for more than one second");
+    std::cout << "PASS meter peaks between editor reads, one-second hold\n";
 }
 inline void layout(juce::AudioProcessorEditor &editor) {
     auto *content = find(editor, "content");

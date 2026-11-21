@@ -72,8 +72,11 @@ class WallProcessor final : public juce::AudioProcessor {
     juce::AudioProcessorValueTreeState parameters;
     juce::UndoManager undoManager;
     suite::ParameterUndo parameterUndo;
-    std::atomic<float> inputDb{-100}, outputDb{-100}, reductionDb{0}, shortLufs{-100}, integratedLufs{-100},
-        truePeakDb{-100};
+    // Peaks since the last editor read. The editor reads them with exchange(noReading).
+    // noReading tells the editor that no audio block ran since that read.
+    static constexpr float noReading = -1000.f;
+    std::atomic<float> inputDb{noReading}, outputDb{noReading}, reductionDb{noReading};
+    std::atomic<float> shortLufs{-100}, integratedLufs{-100}, truePeakDb{-100};
     float artworkPhase() const noexcept { return artworkClock.currentPhase(); }
     double preparedSampleRate() const noexcept { return preparedRate; }
     std::atomic<int> effectiveFactor{4};
