@@ -32,9 +32,16 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     void combo(const char *id, const juce::StringArray &);
     void toggle(const char *id, const char *label);
     void drawGraph(juce::Graphics &);
-    juce::Rectangle<int> at(int x, int y, int w, int h) const;
+    void paintContent(juce::Graphics &);
+    // Holds every control at the design size. resized() scales it.
+    struct Content final : juce::Component {
+        explicit Content(WallEditor &owner) : editor(owner) {}
+        void paint(juce::Graphics &g) override { editor.paintContent(g); }
+        WallEditor &editor;
+    };
     WallProcessor &wallProcessor;
     WallLook look;
+    Content content{*this};
     juce::Image fortress;
     std::unique_ptr<juce::Drawable> ceilingMark;
     std::map<juce::String, std::unique_ptr<juce::Slider>> sliders;

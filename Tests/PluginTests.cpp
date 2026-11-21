@@ -238,12 +238,10 @@ int main(int argc, char **argv) {
         p.processBlock(clockAudio, clockMidi);
         p.processBlock(clockAudio, clockMidi);
         require(p.artworkPhase() > 0.875f, "SVG advances on audio time without host transport");
-        for (auto* control : editor->getChildren())
-            if (dynamic_cast<juce::Button*>(control) || dynamic_cast<juce::ComboBox*>(control))
-                require(control->getHeight() >= 40 && control->getWidth() >= 40, "action target is smaller than 40 px");
+        checks::layout(*editor);
         checks::controls(p, *editor);
         checks::editorSuite(p, *editor);
-        auto *presetsBox = dynamic_cast<juce::ComboBox *>(editor->findChildWithID("presets"));
+        auto *presetsBox = dynamic_cast<juce::ComboBox *>(checks::find(*editor, "presets"));
         require(presetsBox != nullptr && presetsBox->getNumItems() == 48, "expected 48 factory presets");
         require(presetsBox->getRootMenu()->getNumItems() == 7, "expected 7 dance-style preset submenus");
         p.applyPreset(1);

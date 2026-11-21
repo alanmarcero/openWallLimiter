@@ -153,7 +153,7 @@ void PresetBrowser::resized() {
     area.removeFromTop(6);
     hint.setBounds(area.removeFromBottom(16));
     area.removeFromBottom(4);
-    auto buttons = area.removeFromBottom(32);
+    auto buttons = area.removeFromBottom(36);
     area.removeFromBottom(4);
     nameBox.setBounds(area.removeFromBottom(28));
     area.removeFromBottom(6);

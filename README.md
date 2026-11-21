@@ -23,7 +23,7 @@ The fortress mark pulses on quarter notes from the DAW transport, including afte
 - **Loudness target:** Choose Streaming (−14 LUFS), Club (−9 LUFS), or a custom target. The editor compares the BS.1770 reading with that target. Match adds the difference to input drive, within ±12 dB.
 - **Undo and A/B:** Undo and Redo step through parameter edits (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z). A and B keep two full setups. A>B and B>A copy one onto the other.
 - **Library:** Save, rename, and delete your own presets in Documents/Alan Marcero/openWallLimiter/Presets. Search and favourite factory or saved presets there. Factory presets stay read-only.
-- **Window:** Drag the corner to resize. The minimum stays readable, the aspect ratio is not locked, and the size is saved with the session.
+- **Window:** Drag the corner to resize. The aspect ratio is not locked: the layout scales evenly and stays centred. The minimum keeps buttons readable, and the size is saved with the session.
 - **True peak and Oversampling:** Enable True peak for protection against peaks between samples. Choose Off, 2x, 4x, 8x, or 16x oversampling. True peak uses at least 4x.
 - **Meters:** View gain reduction, short-term and integrated loudness, sample peaks, estimated true peak, and an eight-second history. Reset measurements for a new pass.
 - **Gain Match and Delta:** Match levels for comparison or listen to the difference between processed and original audio.

@@ -118,7 +118,7 @@ void WallEditor::slider(const char *id, bool rotary) {
     s->setDoubleClickReturnValue(true, wallProcessor.parameters.getParameter(id)->convertFrom0to1(
                                            wallProcessor.parameters.getParameter(id)->getDefaultValue()));
     s->setTooltip(juce::String(id) + ": drag to adjust, double-click to reset, or type a value.");
-    addAndMakeVisible(*s);
+    content.addAndMakeVisible(*s);
     sliderAttachments.push_back(std::make_unique<SliderAttachment>(wallProcessor.parameters, id, *s));
     sliders.emplace(id, std::move(s));
 }
@@ -126,7 +126,7 @@ void WallEditor::combo(const char *id, const juce::StringArray &items) {
     auto c = std::make_unique<juce::ComboBox>();
     c->setComponentID(id);
     c->addItemList(items, 1);
-    addAndMakeVisible(*c);
+    content.addAndMakeVisible(*c);
     comboAttachments.push_back(std::make_unique<ComboAttachment>(wallProcessor.parameters, id, *c));
     combos.emplace(id, std::move(c));
 }
@@ -134,12 +134,15 @@ void WallEditor::toggle(const char *id, const char *label) {
     auto b = std::make_unique<juce::TextButton>(label);
     b->setComponentID(id);
     b->setClickingTogglesState(true);
-    addAndMakeVisible(*b);
+    content.addAndMakeVisible(*b);
     buttonAttachments.push_back(std::make_unique<ButtonAttachment>(wallProcessor.parameters, id, *b));
     buttons.emplace(id, std::move(b));
 }
 WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcessor(p) {
     setLookAndFeel(&look);
+    content.setComponentID("content");
+    content.setBounds(0, 0, WallProcessor::defaultEditorWidth, WallProcessor::defaultEditorHeight);
+    addAndMakeVisible(content);
     ceilingMark = juce::Drawable::createFromImageData(BinaryData::ceilingmeter_svg, BinaryData::ceilingmeter_svgSize);
     fortress = juce::ImageCache::getFromMemory(BinaryData::fortress_png, BinaryData::fortress_pngSize);
     inputHistory.fill(-60);
@@ -201,7 +204,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
             m->endChangeGesture();
             timerCallback();
         };
-        addAndMakeVisible(modes[i]);
+        content.addAndMakeVisible(modes[i]);
     }
     std::vector<juce::String> presetGroups;
     std::vector<juce::PopupMenu> presetMenus;
@@ -224,7 +227,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     presets.setComponentID("presets");
     presets.setTooltip("Choose a factory limiter preset. These 48 presets are also host programs. Use Library for saved presets.");
     presets.onChange = [this] { wallProcessor.applyPreset(presets.getSelectedItemIndex()); };
-    addAndMakeVisible(presets);
+    content.addAndMakeVisible(presets);
     prevPreset.setComponentID("prev_preset");
     prevPreset.setTooltip("Previous preset");
     prevPreset.onClick = [this] {
@@ -234,7 +237,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
         const int next = (cur <= 0 ? numItems : cur) - 1;
         presets.setSelectedItemIndex(next, juce::sendNotificationSync);
     };
-    addAndMakeVisible(prevPreset);
+    content.addAndMakeVisible(prevPreset);
     nextPreset.setComponentID("next_preset");
     nextPreset.setTooltip("Next preset");
     nextPreset.onClick = [this] {
@@ -244,13 +247,13 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
         const int next = (cur + 1) % numItems;
         presets.setSelectedItemIndex(next, juce::sendNotificationSync);
     };
-    addAndMakeVisible(nextPreset);
+    content.addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
     reset.onClick = [this] { wallProcessor.resetMeters(); };
-    addAndMakeVisible(reset);
+    content.addAndMakeVisible(reset);
     link.setClickingTogglesState(true);
     link.setTooltip("Move threshold and ceiling together when dragging either fader.");
-    addAndMakeVisible(link);
+    content.addAndMakeVisible(link);
     combo("lufs_mode", wall::lufsModeNames);
     combos["lufs_mode"]->setTooltip("Loudness target from the BS.1770 meter. Streaming is -14 LUFS. Club is -9 LUFS.");
     slider("lufs_target", true);
@@ -260,7 +263,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     matchLoudness.setComponentID("lufs_match");
     matchLoudness.setTooltip("Add the difference between the current loudness and the target to input drive.");
     matchLoudness.onClick = [this] { wallProcessor.matchLoudnessTarget(); };
-    addAndMakeVisible(matchLoudness);
+    content.addAndMakeVisible(matchLoudness);
     undoButton.setComponentID("undo");
     redoButton.setComponentID("redo");
     abA.setComponentID("ab_a");
@@ -289,7 +292,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     abAToB.onClick = [this] { wallProcessor.copyAB(0, 1); };
     abBToA.onClick = [this] { wallProcessor.copyAB(1, 0); };
     for (auto *button : {&undoButton, &redoButton, &abA, &abB, &abAToB, &abBToA, &libraryButton})
-        addAndMakeVisible(button);
+        content.addAndMakeVisible(button);
     juce::StringArray factoryNames;
     for (const auto &preset : WallProcessor::factoryPresets())
         factoryNames.add(preset.name);
@@ -299,7 +302,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     presetBrowser->onFactory = [this](int index) { presets.setSelectedItemIndex(index, juce::sendNotificationSync); };
     presetBrowser->onUser = [this](const juce::MemoryBlock &block) { wallProcessor.loadParameterState(block); };
     presetBrowser->capture = [this] { return wallProcessor.captureParameters(); };
-    addChildComponent(*presetBrowser);
+    content.addChildComponent(*presetBrowser);
     libraryButton.onClick = [this] {
         presetBrowser->setVisible(libraryButton.getToggleState());
         if (presetBrowser->isVisible()) {
@@ -336,12 +339,6 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     timerCallback();
     startTimerHz(30);
 }
-juce::Rectangle<int> WallEditor::at(int x, int y, int w, int h) const {
-    const float sx = getWidth() > 0 ? float(getWidth()) / float(WallProcessor::defaultEditorWidth) : 1.f;
-    const float sy = getHeight() > 0 ? float(getHeight()) / float(WallProcessor::defaultEditorHeight) : 1.f;
-    return {juce::roundToInt(x * sx), juce::roundToInt(y * sy), std::max(1, juce::roundToInt(w * sx)),
-            std::max(1, juce::roundToInt(h * sy))};
-}
 bool WallEditor::keyPressed(const juce::KeyPress &key) {
     const auto command = juce::ModifierKeys::commandModifier;
     if (key == juce::KeyPress('z', command | juce::ModifierKeys::shiftModifier, 0)) {
@@ -375,12 +372,12 @@ void WallEditor::timerCallback() {
     matchLoudness.setEnabled(lufsMode != 0);
     if (!presets.isPopupActive() && presets.getSelectedItemIndex() != wallProcessor.getCurrentProgram())
         presets.setSelectedItemIndex(wallProcessor.getCurrentProgram(), juce::dontSendNotification);
-    repaint(at(200, 260, 700, 265));
-    repaint(at(40, 590, 140, 32));
-    repaint(at(948, 590, 140, 32));
-    repaint(at(20, 10, 56, 56));
-    repaint(at(590, 688, 510, 40));
-    repaint(at(24, 800, 1072, 24));
+    content.repaint(200, 260, 700, 265);
+    content.repaint(40, 590, 140, 32);
+    content.repaint(948, 590, 140, 32);
+    content.repaint(20, 10, 56, 56);
+    content.repaint(590, 688, 510, 40);
+    content.repaint(24, 800, 1072, 24);
 }
 void WallEditor::resized() {
     const int width = std::clamp(getWidth(), WallProcessor::minEditorWidth, WallProcessor::maxEditorWidth);
@@ -390,48 +387,54 @@ void WallEditor::resized() {
         return;
     }
     wallProcessor.setStoredEditorSize(width, height);
-    undoButton.setBounds(at(336, 18, 64, 40));
-    redoButton.setBounds(at(404, 18, 64, 40));
-    abA.setBounds(at(476, 18, 40, 40));
-    abB.setBounds(at(520, 18, 40, 40));
-    abAToB.setBounds(at(568, 18, 52, 40));
-    abBToA.setBounds(at(624, 18, 52, 40));
-    prevPreset.setBounds(at(684, 18, 70, 40));
-    presets.setBounds(at(758, 18, 210, 40));
-    nextPreset.setBounds(at(972, 18, 48, 40));
-    libraryButton.setBounds(at(1024, 18, 76, 40));
-    buttons["highpass_on"]->setBounds(at(40, 101, 104, 40));
-    sliders["highpass_hz"]->setBounds(at(152, 94, 202, 58));
-    combos["highpass_slope"]->setBounds(at(368, 101, 136, 40));
-    buttons["lowpass_on"]->setBounds(at(615, 101, 104, 40));
-    sliders["lowpass_hz"]->setBounds(at(727, 94, 202, 58));
-    combos["lowpass_slope"]->setBounds(at(940, 101, 136, 40));
+    // Scale x and y by one factor and centre the layout. The window aspect ratio stays free.
+    const float scale = std::min(float(width) / float(WallProcessor::defaultEditorWidth),
+                                 float(height) / float(WallProcessor::defaultEditorHeight));
+    content.setTransform(juce::AffineTransform::scale(scale).translated(
+        (float(width) - float(WallProcessor::defaultEditorWidth) * scale) * .5f,
+        (float(height) - float(WallProcessor::defaultEditorHeight) * scale) * .5f));
+    undoButton.setBounds(336, 18, 64, 40);
+    redoButton.setBounds(404, 18, 64, 40);
+    abA.setBounds(476, 18, 40, 40);
+    abB.setBounds(520, 18, 40, 40);
+    abAToB.setBounds(568, 18, 52, 40);
+    abBToA.setBounds(624, 18, 52, 40);
+    prevPreset.setBounds(684, 18, 70, 40);
+    presets.setBounds(758, 18, 210, 40);
+    nextPreset.setBounds(972, 18, 48, 40);
+    libraryButton.setBounds(1024, 18, 76, 40);
+    buttons["highpass_on"]->setBounds(40, 101, 104, 40);
+    sliders["highpass_hz"]->setBounds(152, 94, 202, 58);
+    combos["highpass_slope"]->setBounds(368, 101, 136, 40);
+    buttons["lowpass_on"]->setBounds(615, 101, 104, 40);
+    sliders["lowpass_hz"]->setBounds(727, 94, 202, 58);
+    combos["lowpass_slope"]->setBounds(940, 101, 136, 40);
     for (size_t i = 0; i < modes.size(); ++i)
-        modes[i].setBounds(at(240 + int(i) * 132, 201, 124, 40));
-    sliders["threshold"]->setBounds(at(53, 300, 110, 190));
-    sliders["ceiling"]->setBounds(at(959, 300, 110, 190));
-    link.setBounds(at(62, 502, 98, 40));
-    sliders["release"]->setBounds(at(218, 560, 74, 96));
-    sliders["clip"]->setBounds(at(294, 560, 74, 96));
-    sliders["upward"]->setBounds(at(370, 560, 74, 96));
-    sliders["stereo_link"]->setBounds(at(446, 560, 74, 96));
-    sliders["release_link"]->setBounds(at(522, 560, 74, 96));
-    sliders["lookahead_ms"]->setBounds(at(598, 560, 74, 96));
-    sliders["input_gain"]->setBounds(at(674, 560, 74, 96));
-    sliders["stereo_width"]->setBounds(at(750, 560, 74, 96));
-    sliders["tone_tilt"]->setBounds(at(826, 560, 74, 96));
-    combos["lufs_mode"]->setBounds(at(88, 688, 168, 40));
-    sliders["lufs_target"]->setBounds(at(264, 688, 220, 40));
-    matchLoudness.setBounds(at(492, 688, 88, 40));
-    combos["oversampling"]->setBounds(at(122, 756, 88, 40));
-    buttons["true_peak"]->setBounds(at(222, 756, 104, 40));
-    combos["dither"]->setBounds(at(398, 756, 138, 40));
-    buttons["gain_match"]->setBounds(at(640, 756, 115, 40));
-    buttons["delta"]->setBounds(at(765, 756, 75, 40));
-    buttons["bypass"]->setBounds(at(850, 756, 84, 40));
-    reset.setBounds(at(949, 756, 143, 40));
+        modes[i].setBounds(240 + int(i) * 132, 201, 124, 40);
+    sliders["threshold"]->setBounds(53, 300, 110, 190);
+    sliders["ceiling"]->setBounds(959, 300, 110, 190);
+    link.setBounds(62, 502, 98, 40);
+    sliders["release"]->setBounds(218, 560, 74, 96);
+    sliders["clip"]->setBounds(294, 560, 74, 96);
+    sliders["upward"]->setBounds(370, 560, 74, 96);
+    sliders["stereo_link"]->setBounds(446, 560, 74, 96);
+    sliders["release_link"]->setBounds(522, 560, 74, 96);
+    sliders["lookahead_ms"]->setBounds(598, 560, 74, 96);
+    sliders["input_gain"]->setBounds(674, 560, 74, 96);
+    sliders["stereo_width"]->setBounds(750, 560, 74, 96);
+    sliders["tone_tilt"]->setBounds(826, 560, 74, 96);
+    combos["lufs_mode"]->setBounds(88, 688, 168, 40);
+    sliders["lufs_target"]->setBounds(264, 688, 220, 40);
+    matchLoudness.setBounds(492, 688, 88, 40);
+    combos["oversampling"]->setBounds(122, 756, 88, 40);
+    buttons["true_peak"]->setBounds(222, 756, 104, 40);
+    combos["dither"]->setBounds(398, 756, 138, 40);
+    buttons["gain_match"]->setBounds(640, 756, 115, 40);
+    buttons["delta"]->setBounds(765, 756, 75, 40);
+    buttons["bypass"]->setBounds(850, 756, 84, 40);
+    reset.setBounds(949, 756, 143, 40);
     if (presetBrowser)
-        presetBrowser->setBounds(at(690, 88, 406, 560));
+        presetBrowser->setBounds(690, 88, 406, 560);
     juce::AudioProcessorEditor::resized();
 }
 void WallEditor::drawGraph(juce::Graphics &g) {
@@ -478,8 +481,9 @@ void WallEditor::drawGraph(juce::Graphics &g) {
     text(g, "8 seconds", {786, 505, 94, 20}, 12, muted, juce::Justification::centredRight);
 }
 void WallEditor::paint(juce::Graphics &g) {
-    g.addTransform(juce::AffineTransform::scale(float(getWidth()) / float(WallProcessor::defaultEditorWidth),
-                                                float(getHeight()) / float(WallProcessor::defaultEditorHeight)));
+    g.fillAll(ink);
+}
+void WallEditor::paintContent(juce::Graphics &g) {
     g.fillAll(ink);
     g.drawImage(fortress, {0, 62, 1120, 374});
     g.setGradientFill(juce::ColourGradient(ink.withAlpha(.05f), 0, 100, ink, 0, 410, false));

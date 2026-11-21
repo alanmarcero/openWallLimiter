@@ -63,8 +63,9 @@ class WallProcessor final : public juce::AudioProcessor {
     void setStoredEditorSize(int width, int height);
     static constexpr int defaultEditorWidth = 1120;
     static constexpr int defaultEditorHeight = 828;
-    static constexpr int minEditorWidth = 960;
-    static constexpr int minEditorHeight = 680;
+    // 90% of the default size, so 40 px buttons stay at least 36 px tall.
+    static constexpr int minEditorWidth = 1008;
+    static constexpr int minEditorHeight = 746;
     static constexpr int maxEditorWidth = 2560;
     static constexpr int maxEditorHeight = 1800;
     static constexpr int sincPadHalfSpan = 16;

@@ -261,6 +261,37 @@ inline void typedValues() {
     require(std::abs(typed("threshold", "-6.5 dB") - typed("threshold", "-6.5")) < .001f, "dB suffix");
     std::cout << "PASS typed values and display formats\n";
 }
+inline void layout(juce::AudioProcessorEditor &editor) {
+    auto *content = find(editor, "content");
+    require(content != nullptr, "content component missing");
+    std::vector<juce::Component *> shown;
+    std::ranges::copy_if(content->getChildren(), std::back_inserter(shown),
+                         [](juce::Component *child) { return child->isVisible(); });
+    std::ranges::for_each(shown, [&](juce::Component *child) {
+        const auto id = child->getComponentID().toStdString();
+        const auto overlap = id + " overlaps another control";
+        require(std::ranges::none_of(shown, [&](juce::Component *other) {
+                    return other != child && other->getBounds().intersects(child->getBounds());
+                }),
+                overlap.c_str());
+        const auto small = id + " is smaller than 40 px";
+        if (dynamic_cast<juce::Button *>(child) || dynamic_cast<juce::ComboBox *>(child))
+            require(child->getHeight() >= 40 && child->getWidth() >= 40, small.c_str());
+        const auto dial = id + " dial is smaller than 64 px";
+        if (auto *slider = dynamic_cast<juce::Slider *>(child); slider != nullptr && slider->isRotary())
+            require(slider->getWidth() >= 64 && slider->getHeight() - slider->getTextBoxHeight() >= 64, dial.c_str());
+    });
+    auto *library = dynamic_cast<juce::Button *>(find(editor, "preset_library"));
+    library->setToggleState(true, juce::sendNotificationSync);
+    auto *browser = find(editor, "preset_browser");
+    require(browser->isVisible(), "library did not open");
+    std::ranges::for_each(browser->getChildren(), [](juce::Component *child) {
+        if (dynamic_cast<juce::Button *>(child))
+            require(child->getHeight() >= 36, "library button is shorter than 36 px");
+    });
+    library->setToggleState(false, juce::sendNotificationSync);
+    std::cout << "PASS layout: no overlaps, 40 px targets, 64 px dials, 36 px library buttons\n";
+}
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
     require(lookahead != nullptr, "lookahead slider missing");
@@ -289,10 +320,19 @@ inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &ed
     editor.setSize(1500, 900);
     require(editor.getWidth() == 1500 && editor.getHeight() == 900, "editor rejected a free aspect ratio");
     auto *undo = find(editor, "undo");
-    require(undo->getX() > 336 && undo->getRight() < editor.getWidth(), "resized layout did not scale");
+    auto *content = find(editor, "content");
+    const float scale = 900.f / float(WallProcessor::defaultEditorHeight);
+    const auto scaledUndo = editor.getLocalArea(undo, undo->getLocalBounds().toFloat());
+    require(std::abs(scaledUndo.getWidth() - 64.f * scale) < .5f && std::abs(scaledUndo.getHeight() - 40.f * scale) < .5f,
+            "resized layout did not scale x and y by one factor");
+    const auto scaledContent = editor.getLocalArea(content, content->getLocalBounds().toFloat());
+    require(std::abs(scaledContent.getX() - (float(editor.getWidth()) - scaledContent.getRight())) < .5f,
+            "scaled layout is not centred");
     editor.setSize(100, 100);
     require(editor.getWidth() == WallProcessor::minEditorWidth && editor.getHeight() == WallProcessor::minEditorHeight,
             "editor shrank below the readable minimum");
+    require(editor.getLocalArea(undo, undo->getLocalBounds().toFloat()).getHeight() >= 35.99f,
+            "buttons are shorter than 36 px at the minimum size");
     editor.setSize(WallProcessor::defaultEditorWidth, WallProcessor::defaultEditorHeight);
     require(processor.storedEditorWidth() == WallProcessor::defaultEditorWidth
                 && processor.storedEditorHeight() == WallProcessor::defaultEditorHeight,
