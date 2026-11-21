@@ -32,6 +32,40 @@ void box(juce::Graphics &g, juce::Rectangle<float> r) {
     g.drawRoundedRectangle(r, 6, 1);
 }
 } // namespace
+Readout::Readout(const char *id, const juce::String &caption, float valueSize) : size(valueSize) {
+    setComponentID(id);
+    setTitle(caption);
+}
+void Readout::show(const juce::String &shown, juce::Colour shownColour) {
+    if (shown == value && shownColour == colour)
+        return;
+    value = shown;
+    colour = shownColour;
+    repaint();
+}
+void Readout::paint(juce::Graphics &g) {
+    text(g, getTitle(), getLocalBounds().withHeight(19), 12, muted);
+    text(g, value, getLocalBounds().withTrimmedTop(21), size, colour);
+}
+void Readout::mouseUp(const juce::MouseEvent &e) {
+    if (onClick != nullptr && contains(e.getPosition()))
+        onClick();
+}
+std::unique_ptr<juce::AccessibilityHandler> Readout::createAccessibilityHandler() {
+    struct Value final : juce::AccessibilityTextValueInterface {
+        explicit Value(const Readout &owner) : readout(owner) {}
+        bool isReadOnly() const override { return true; }
+        juce::String getCurrentValueAsString() const override { return readout.value; }
+        void setValueAsString(const juce::String &) override {}
+        const Readout &readout;
+    };
+    juce::AccessibilityActions actions;
+    if (onClick != nullptr)
+        actions.addAction(juce::AccessibilityActionType::press, [this] { onClick(); });
+    return std::make_unique<juce::AccessibilityHandler>(
+        *this, juce::AccessibilityRole::staticText, std::move(actions),
+        juce::AccessibilityHandler::Interfaces{std::make_unique<Value>(*this)});
+}
 WallLook::WallLook() {
     setColour(juce::Slider::textBoxTextColourId, paper);
     setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
@@ -65,7 +99,7 @@ void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const ju
     }
 }
 void WallLook::drawRotarySlider(juce::Graphics &g, int x, int y, int w, int h, float pos, float start,
-                                float end, juce::Slider &) {
+                                float end, juce::Slider &slider) {
     auto r = juce::Rectangle<float>(float(x), float(y), float(w), float(h)).reduced(9);
     auto centre = r.getCentre();
     float radius = std::min(r.getWidth(), r.getHeight()) * .5f;
@@ -90,9 +124,11 @@ void WallLook::drawRotarySlider(juce::Graphics &g, int x, int y, int w, int h, f
     auto b = centre.getPointOnCircumference(radius * .68f, angle);
     g.setColour(paper);
     g.drawLine({a, b}, 2.5f);
+    if (slider.hasKeyboardFocus(false))
+        g.drawRoundedRectangle(slider.getLocalBounds().toFloat().reduced(1), 4, 1);
 }
 void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, float position, float, float,
-                                juce::Slider::SliderStyle style, juce::Slider &) {
+                                juce::Slider::SliderStyle style, juce::Slider &slider) {
     bool vertical = style == juce::Slider::LinearVertical;
     float cx = float(x) + float(w) * .5f, cy = float(y) + float(h) * .5f;
     g.setColour(juce::Colour(0xff06090a));
@@ -112,15 +148,21 @@ void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, f
         g.fillRoundedRectangle(float(x), cy - 2, position - float(x), 4, 2);
         g.fillEllipse(position - 6, cy - 6, 12, 12);
     }
+    if (slider.hasKeyboardFocus(false)) {
+        g.setColour(paper);
+        g.drawRoundedRectangle(slider.getLocalBounds().toFloat().reduced(1), 4, 1);
+    }
 }
 void WallEditor::slider(const char *id, bool rotary) {
+    auto *parameter = wallProcessor.parameters.getParameter(id);
     auto s = std::make_unique<juce::Slider>();
     s->setComponentID(id);
     s->setName(id);
+    s->setTitle(parameter->getName(64));
+    s->setWantsKeyboardFocus(true);
     s->setSliderStyle(rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
     s->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 96, 25);
-    s->setDoubleClickReturnValue(true, wallProcessor.parameters.getParameter(id)->convertFrom0to1(
-                                           wallProcessor.parameters.getParameter(id)->getDefaultValue()));
+    s->setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
     s->setTooltip(juce::String(id) + ": drag to adjust, double-click to reset, or type a value.");
     content.addAndMakeVisible(*s);
     sliderAttachments.push_back(std::make_unique<SliderAttachment>(wallProcessor.parameters, id, *s));
@@ -129,14 +171,17 @@ void WallEditor::slider(const char *id, bool rotary) {
 void WallEditor::combo(const char *id, const juce::StringArray &items) {
     auto c = std::make_unique<juce::ComboBox>();
     c->setComponentID(id);
+    c->setTitle(wallProcessor.parameters.getParameter(id)->getName(64));
     c->addItemList(items, 1);
     content.addAndMakeVisible(*c);
     comboAttachments.push_back(std::make_unique<ComboAttachment>(wallProcessor.parameters, id, *c));
     combos.emplace(id, std::move(c));
 }
 void WallEditor::toggle(const char *id) {
-    auto b = std::make_unique<juce::TextButton>(wallProcessor.parameters.getParameter(id)->getName(64));
+    const auto name = wallProcessor.parameters.getParameter(id)->getName(64);
+    auto b = std::make_unique<juce::TextButton>(name);
     b->setComponentID(id);
+    b->setTitle(name);
     b->setClickingTogglesState(true);
     content.addAndMakeVisible(*b);
     buttonAttachments.push_back(std::make_unique<ButtonAttachment>(wallProcessor.parameters, id, *b));
@@ -200,6 +245,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     for (size_t i = 0; i < modes.size(); ++i) {
         modes[i].setButtonText(wall::modeNames[int(i)]);
         modes[i].setComponentID("mode" + juce::String(int(i)));
+        modes[i].setTitle(wall::modeNames[int(i)]);
         modes[i].setTooltip(hints[i]);
         modes[i].onClick = [this, i] {
             auto *m = wallProcessor.parameters.getParameter("mode");
@@ -229,10 +275,12 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     });
     presets.setSelectedId(1, juce::dontSendNotification);
     presets.setComponentID("presets");
+    presets.setTitle("Preset");
     presets.setTooltip("Choose a factory limiter preset. These 48 presets are also host programs. Use Library for saved presets.");
     presets.onChange = [this] { wallProcessor.applyPreset(presets.getSelectedItemIndex()); };
     content.addAndMakeVisible(presets);
     prevPreset.setComponentID("prev_preset");
+    prevPreset.setTitle("Previous preset");
     prevPreset.setTooltip("Previous preset");
     prevPreset.onClick = [this] {
         const int numItems = presets.getNumItems();
@@ -243,6 +291,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     };
     content.addAndMakeVisible(prevPreset);
     nextPreset.setComponentID("next_preset");
+    nextPreset.setTitle("Next preset");
     nextPreset.setTooltip("Next preset");
     nextPreset.onClick = [this] {
         const int numItems = presets.getNumItems();
@@ -253,8 +302,10 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     };
     content.addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
+    reset.setTitle("Reset meters");
     reset.onClick = [this] { wallProcessor.resetMeters(); };
     content.addAndMakeVisible(reset);
+    link.setTitle("Link levels");
     link.setClickingTogglesState(true);
     link.setTooltip("Move threshold and ceiling together when dragging either fader.");
     content.addAndMakeVisible(link);
@@ -265,6 +316,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     sliders["lufs_target"]->setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 22);
     sliders["lufs_target"]->setTooltip("Custom loudness target, used when the target mode is Custom.");
     matchLoudness.setComponentID("lufs_match");
+    matchLoudness.setTitle("Drive to target");
     matchLoudness.setTooltip("Add the difference between the current loudness and the target to input drive.");
     matchLoudness.onClick = [this] { wallProcessor.matchLoudnessTarget(); };
     content.addAndMakeVisible(matchLoudness);
@@ -275,6 +327,13 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     abAToB.setComponentID("ab_a_to_b");
     abBToA.setComponentID("ab_b_to_a");
     libraryButton.setComponentID("preset_library");
+    undoButton.setTitle("Undo");
+    redoButton.setTitle("Redo");
+    abA.setTitle("Setup A");
+    abB.setTitle("Setup B");
+    abAToB.setTitle("Copy A to B");
+    abBToA.setTitle("Copy B to A");
+    libraryButton.setTitle("Library");
     undoButton.setTooltip("Undo the last parameter edit (Cmd/Ctrl+Z).");
     redoButton.setTooltip("Redo the last undone edit (Shift+Cmd/Ctrl+Z).");
     abA.setTooltip("Hear setup A.");
@@ -307,6 +366,13 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     presetBrowser->onUser = [this](const juce::MemoryBlock &block) { wallProcessor.loadParameterState(block); };
     presetBrowser->capture = [this] { return wallProcessor.captureParameters(); };
     content.addChildComponent(*presetBrowser);
+    const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
+    std::ranges::for_each(readouts, [this](Readout *readout) { content.addAndMakeVisible(readout); });
+    guidance.setComponentID("loudness_guidance");
+    guidance.setFont(font(12));
+    guidance.setColour(juce::Label::textColourId, paper);
+    guidance.setBorderSize({});
+    content.addAndMakeVisible(guidance);
     libraryButton.onClick = [this] {
         presetBrowser->setVisible(libraryButton.getToggleState());
         if (presetBrowser->isVisible()) {
@@ -372,15 +438,22 @@ void WallEditor::timerCallback() {
     abA.setToggleState(wallProcessor.activeAB() == 0, juce::dontSendNotification);
     abB.setToggleState(wallProcessor.activeAB() == 1, juce::dontSendNotification);
     const int lufsMode = int(std::lround(wallProcessor.parameters.getRawParameterValue("lufs_mode")->load()));
+    const float custom = wallProcessor.parameters.getRawParameterValue("lufs_target")->load();
+    gainReduction.show(reading(wallProcessor.reductionDb.load(), " dB"), red);
+    shortTerm.show(reading(wallProcessor.shortLufs.load(), " LUFS"), paper);
+    integrated.show(reading(wallProcessor.integratedLufs.load(), " LUFS"), paper);
+    truePeak.show(reading(wallProcessor.truePeakDb.load(), " dBTP"), paper);
+    inputLevel.show(reading(wallProcessor.inputDb.load(), " dB"), blue);
+    outputLevel.show(reading(wallProcessor.outputDb.load(), " dB"), brass);
+    guidance.setText(wall::loudnessGuidance(lufsMode, custom, wallProcessor.integratedLufs.load(),
+                                            wallProcessor.shortLufs.load()),
+                     juce::dontSendNotification);
     sliders["lufs_target"]->setEnabled(lufsMode == 3);
     matchLoudness.setEnabled(lufsMode != 0);
     if (!presets.isPopupActive() && presets.getSelectedItemIndex() != wallProcessor.getCurrentProgram())
         presets.setSelectedItemIndex(wallProcessor.getCurrentProgram(), juce::dontSendNotification);
     content.repaint(200, 260, 700, 265);
-    content.repaint(40, 590, 140, 32);
-    content.repaint(948, 590, 140, 32);
     content.repaint(20, 10, 56, 56);
-    content.repaint(584, 688, 512, 40);
     content.repaint(24, 800, 1072, 24);
 }
 void WallEditor::resized() {
@@ -437,6 +510,13 @@ void WallEditor::resized() {
     buttons["delta"]->setBounds(765, 756, 75, 40);
     buttons["bypass"]->setBounds(850, 756, 84, 40);
     reset.setBounds(949, 756, 143, 40);
+    gainReduction.setBounds(240, 265, 164, 49);
+    shortTerm.setBounds(408, 265, 164, 49);
+    integrated.setBounds(576, 265, 164, 49);
+    truePeak.setBounds(744, 265, 164, 49);
+    inputLevel.setBounds(40, 570, 140, 50);
+    outputLevel.setBounds(948, 570, 140, 50);
+    guidance.setBounds(584, 695, 512, 24);
     if (presetBrowser)
         presetBrowser->setBounds(690, 88, 406, 560);
     juce::AudioProcessorEditor::resized();
@@ -522,16 +602,6 @@ void WallEditor::paintContent(juce::Graphics &g) {
         const auto &[id, area, size, colour, justify] = caption;
         text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size, colour, justify);
     });
-    const std::array<juce::String, 4> values{reading(wallProcessor.reductionDb.load(), " dB"),
-                                             reading(wallProcessor.shortLufs.load(), " LUFS"),
-                                             reading(wallProcessor.integratedLufs.load(), " LUFS"),
-                                             reading(wallProcessor.truePeakDb.load(), " dBTP")};
-    const std::array<const char *, 4> labels{"Gain reduction", "Short-term", "Integrated", "True peak"};
-    for (size_t i = 0; i < 4; ++i) {
-        int x = 240 + int(i) * 168;
-        text(g, labels[i], {x, 265, 164, 19}, 12, muted);
-        text(g, values[i], {x, 286, 164, 28}, 22, i == 0 ? red : paper);
-    }
     const float tp = wallProcessor.truePeakDb.load();
     const bool tpClip = tp > 0.0f;
     g.setColour(tpClip ? red : (tp > -1.0f ? brass : juce::Colour(0xff2d3a33)));
@@ -545,15 +615,6 @@ void WallEditor::paintContent(juce::Graphics &g) {
         const auto name = wallProcessor.parameters.getParameter(id)->getName(64);
         text(g, name, {sliders.at(id)->getX(), 537, 74, 20}, 12, paper, juce::Justification::centred);
     });
-    text(g, "Input", {40, 570, 70, 20}, 12, muted);
-    text(g, reading(wallProcessor.inputDb.load(), " dB"), {40, 592, 140, 28}, 23, blue);
-    text(g, "Output", {948, 570, 100, 20}, 12, muted);
-    text(g, reading(wallProcessor.outputDb.load(), " dB"), {948, 592, 140, 28}, 23, brass);
-    const int lufsMode = int(std::lround(wallProcessor.parameters.getRawParameterValue("lufs_mode")->load()));
-    const float custom = wallProcessor.parameters.getRawParameterValue("lufs_target")->load();
-    text(g,
-         wall::loudnessGuidance(lufsMode, custom, wallProcessor.integratedLufs.load(), wallProcessor.shortLufs.load()),
-         {584, 695, 512, 24}, 12, paper);
     g.setColour(juce::Colour(0xff283842));
     g.drawHorizontalLine(744, 24, 1096);
     text(g,

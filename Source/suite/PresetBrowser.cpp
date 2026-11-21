@@ -16,21 +16,26 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
     styleField(search);
     search.setTextToShowWhenEmpty("Search presets", muted);
     search.setComponentID("preset_search");
+    search.setTitle("Search presets");
     search.onTextChange = [this] { refresh(); };
     addAndMakeVisible(search);
     styleField(nameBox);
     nameBox.setTextToShowWhenEmpty("Preset name", muted);
     nameBox.setComponentID("preset_name");
+    nameBox.setTitle("Preset name");
     addAndMakeVisible(nameBox);
     list.setModel(this);
     list.setComponentID("preset_list");
+    list.setTitle("Presets");
     list.setRowHeight(28);
     list.setColour(juce::ListBox::backgroundColourId, ink);
     list.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff283842));
     list.setOutlineThickness(1);
     addAndMakeVisible(list);
-    for (auto *button : {&save, &renameButton, &removeButton, &favoriteButton})
+    for (auto *button : {&save, &renameButton, &removeButton, &favoriteButton}) {
+        button->setTitle(button->getButtonText());
         addAndMakeVisible(button);
+    }
     save.setComponentID("preset_save");
     renameButton.setComponentID("preset_rename");
     removeButton.setComponentID("preset_delete");
@@ -109,6 +114,7 @@ void PresetBrowser::updateButtons() {
         favoriteButton.setButtonText(shown[size_t(selected)].favorite ? "Unfavourite" : "Favorite");
     else
         favoriteButton.setButtonText("Favorite");
+    favoriteButton.setTitle(favoriteButton.getButtonText());
 }
 void PresetBrowser::loadRow(int row) {
     if (suppressLoad || row < 0 || row >= rowCount())

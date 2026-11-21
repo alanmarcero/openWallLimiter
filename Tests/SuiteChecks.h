@@ -294,6 +294,33 @@ inline void layout(juce::AudioProcessorEditor &editor) {
     library->setToggleState(false, juce::sendNotificationSync);
     std::cout << "PASS layout: no overlaps, 40 px targets, 64 px dials, 36 px library buttons\n";
 }
+inline void accessibility(juce::AudioProcessorEditor &editor) {
+    std::ranges::for_each(find(editor, "content")->getChildren(), [](juce::Component *child) {
+        const auto id = child->getComponentID().toStdString();
+        const auto untitled = id + " has no spoken title";
+        if (dynamic_cast<juce::Slider *>(child) || dynamic_cast<juce::ComboBox *>(child)
+            || dynamic_cast<juce::Button *>(child))
+            require(child->getTitle().isNotEmpty(), untitled.c_str());
+        const auto unfocusable = id + " cannot take keyboard focus";
+        if (dynamic_cast<juce::Slider *>(child) && child->isEnabled())
+            require(child->getWantsKeyboardFocus(), unfocusable.c_str());
+    });
+    require(find(editor, "threshold")->getTitle() == "Threshold", "slider title is not the host name");
+    require(find(editor, "ab_a_to_b")->getTitle() == "Copy A to B"
+                && find(editor, "ab_b_to_a")->getTitle() == "Copy B to A",
+            "A/B copy buttons have no spoken title");
+    std::ranges::for_each(std::array{"gain_reduction", "short_term", "integrated", "true_peak_reading",
+                                     "input_level", "output_level"},
+                          [&](const char *id) {
+                              const auto handler = find(editor, id)->createAccessibilityHandler();
+                              const auto *value = handler->getValueInterface();
+                              require(handler->getRole() == juce::AccessibilityRole::staticText
+                                          && handler->getTitle().isNotEmpty() && value != nullptr
+                                          && value->getCurrentValueAsString().isNotEmpty(),
+                                      "meter readout has no accessible title or value");
+                          });
+    std::cout << "PASS spoken titles, focusable sliders, accessible readouts\n";
+}
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
     require(lookahead != nullptr, "lookahead slider missing");

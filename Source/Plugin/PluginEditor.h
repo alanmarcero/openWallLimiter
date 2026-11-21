@@ -15,6 +15,21 @@ class WallLook final : public juce::LookAndFeel_V4 {
                           juce::Slider::SliderStyle, juce::Slider &) override;
     void drawButtonBackground(juce::Graphics &, juce::Button &, const juce::Colour &, bool, bool) override;
 };
+// A meter reading as a component, so screen readers can find it. A click runs onClick when it is set.
+class Readout final : public juce::Component, public juce::SettableTooltipClient {
+  public:
+    Readout(const char *id, const juce::String &caption, float valueSize);
+    std::function<void()> onClick;
+    void show(const juce::String &shown, juce::Colour shownColour);
+    void paint(juce::Graphics &) override;
+    void mouseUp(const juce::MouseEvent &) override;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+
+  private:
+    juce::String value;
+    juce::Colour colour;
+    float size;
+};
 class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer {
   public:
     explicit WallEditor(WallProcessor &);
@@ -57,6 +72,10 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     juce::TextButton undoButton{"Undo"}, redoButton{"Redo"};
     juce::TextButton abA{"A"}, abB{"B"}, abAToB{"A>B"}, abBToA{"B>A"};
     juce::TextButton libraryButton{"Library"}, matchLoudness{"Drive to target"};
+    Readout gainReduction{"gain_reduction", "Gain reduction", 22}, shortTerm{"short_term", "Short-term", 22},
+        integrated{"integrated", "Integrated", 22}, truePeak{"true_peak_reading", "True peak", 22},
+        inputLevel{"input_level", "Input", 23}, outputLevel{"output_level", "Output", 23};
+    juce::Label guidance;
     std::unique_ptr<suite::PresetLibrary> presetLibrary;
     std::unique_ptr<suite::PresetBrowser> presetBrowser;
     juce::TooltipWindow tooltip{this, 650};
