@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
         checks::suiteBehavior();
         checks::typedValues();
         checks::meters();
+        checks::monitoringMeters();
         checks::routing();
         checks::quality();
         WallProcessor p;

@@ -273,10 +273,7 @@ inline void meters() {
     std::fill(burst.begin() + 2048, burst.end(), 0.f);
     render(p, burst, 256);
     require(p.reductionDb.load() > 6.f, "gain reduction meter lost the burst before the editor read it");
-    const auto tick = [] {
-        juce::Thread::sleep(36);
-        juce::Timer::callPendingTimersSynchronously();
-    };
+    const auto tick = [&] { dynamic_cast<juce::Timer &>(*editor).timerCallback(); };
     const auto shown = [&] {
         const auto handler = find(*editor, "gain_reduction")->createAccessibilityHandler();
         return handler->getValueInterface()->getCurrentValueAsString().getFloatValue();
@@ -296,6 +293,55 @@ inline void meters() {
     });
     require(shown() < 1.f, "gain reduction readout held its peak for more than one second");
     std::cout << "PASS meter peaks between editor reads, one-second hold\n";
+}
+inline void monitoringMeters() {
+    struct Reading {
+        float integrated, truePeak, output;
+    };
+    const auto measure = [](const char *monitor) {
+        WallProcessor p;
+        neutral(p);
+        set(p, "threshold", -9.f);
+        set(p, "ceiling", -1.f);
+        if (monitor != nullptr)
+            set(p, monitor, 1.f);
+        p.prepareToPlay(48000, 256);
+        render(p, tone(48000, 48000, 1000, .5f));
+        return Reading{p.integratedLufs.load(), p.truePeakDb.load(), p.outputDb.load()};
+    };
+    const auto processed = measure(nullptr);
+    std::ranges::for_each(std::array{"delta", "bypass", "gain_match"}, [&](const char *monitor) {
+        const auto monitored = measure(monitor);
+        const auto message = std::string(monitor) + " changed what the meters read";
+        require(std::abs(monitored.integrated - processed.integrated) < .01f
+                    && std::abs(monitored.truePeak - processed.truePeak) < .01f
+                    && std::abs(monitored.output - processed.output) < .01f,
+                message.c_str());
+    });
+    WallProcessor p;
+    neutral(p);
+    p.prepareToPlay(48000, 256);
+    render(p, tone(24000, 48000, 1000, .5f));
+    render(p, std::vector<float>(4800, 0.f));
+    require(p.truePeakDb.load() > -10.f, "true peak max did not hold after the audio stopped");
+    p.resetTruePeak();
+    render(p, std::vector<float>(512, 0.f));
+    require(p.truePeakDb.load() < -99.f, "true peak max did not reset");
+    require(p.integratedLufs.load() > -99.f, "true peak reset also cleared loudness");
+    auto editor = std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
+    auto *banner = dynamic_cast<juce::Label *>(find(*editor, "monitoring_banner"));
+    const auto tick = [&] { dynamic_cast<juce::Timer &>(*editor).timerCallback(); };
+    require(!banner->isVisible(), "monitoring banner shows with monitoring off");
+    set(p, "delta", 1.f);
+    tick();
+    require(banner->isVisible() && banner->getText().contains("Delta"), "monitoring banner missing for Delta");
+    set(p, "delta", 0.f);
+    tick();
+    require(!banner->isVisible(), "monitoring banner stayed after Delta turned off");
+    require(find(*editor, "delta")->findColour(juce::TextButton::buttonOnColourId)
+                != find(*editor, "highpass_on")->findColour(juce::TextButton::buttonOnColourId),
+            "monitoring toggles light like processing toggles");
+    std::cout << "PASS meters ignore monitoring, true peak reset, monitoring banner\n";
 }
 inline void layout(juce::AudioProcessorEditor &editor) {
     auto *content = find(editor, "content");

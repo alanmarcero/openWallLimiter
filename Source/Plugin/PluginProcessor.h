@@ -46,6 +46,7 @@ class WallProcessor final : public juce::AudioProcessor {
     void getStateInformation(juce::MemoryBlock &) override;
     void setStateInformation(const void *, int) override;
     void resetMeters() noexcept { meterReset.store(true); }
+    void resetTruePeak() noexcept { truePeakReset.store(true); }
     void applyPreset(int index);
     static const std::vector<WallPreset> &factoryPresets();
     juce::MemoryBlock captureParameters();
@@ -120,7 +121,7 @@ class WallProcessor final : public juce::AudioProcessor {
     juce::SmoothedValue<float> bypassMix, matchGain, deltaMix;
     std::array<float, 2> tiltState{0.0f, 0.0f};
     std::array<std::array<float, 5>, 2> ditherError{};
-    std::atomic<bool> meterReset{false};
+    std::atomic<bool> meterReset{false}, truePeakReset{false};
     int channels = 2, chunkSize = 512, latency = 0, pathLatency = 0, currentPath = 2, nextPath = -1, warmup = 0,
         fade = 0, fadeLength = 960;
     ArtworkBeatClock artworkClock;

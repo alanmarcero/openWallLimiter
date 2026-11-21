@@ -211,6 +211,8 @@ void WallProcessor::process(juce::AudioBuffer<float> &b, bool hostBypass) {
         meter.reset();
         truePeakDb.store(-100);
     }
+    if (truePeakReset.exchange(false))
+        truePeakDb.store(-100);
     for (int offset = 0; offset < b.getNumSamples(); offset += chunkSize)
         processChunk(b, offset, std::min(chunkSize, b.getNumSamples() - offset), hostBypass);
 }
@@ -367,16 +369,17 @@ void WallProcessor::processChunk(juce::AudioBuffer<float> &buffer, int offset, i
                 err[0] = nextErr;
                 wet = code / scale;
             }
+            // Meters read the limiter output before Gain match, Delta and Bypass change what you hear.
+            metering.setSample(c, i, wet);
+            outPeak = std::max(outPeak, std::abs(wet));
             wet *= match;
             const float original = dry.getSample(c, i);
             const float monitor = wet - delta * original;
             const float output = monitor + bypass * (original - monitor);
             buffer.setSample(c, offset + i, output);
-            metering.setSample(c, i, output);
-            outPeak = std::max(outPeak, std::abs(output));
             ++c;
         }
-        meter.process(buffer.getSample(0, offset + i), channels > 1 ? buffer.getSample(1, offset + i) : 0.f);
+        meter.process(metering.getSample(0, i), channels > 1 ? metering.getSample(1, i) : 0.f);
         ++i;
     }
     float reduction = paths[size_t(currentPath)].limiter.gainReductionDb();

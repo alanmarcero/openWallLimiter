@@ -30,7 +30,7 @@ class Readout final : public juce::Component, public juce::SettableTooltipClient
     juce::Colour colour, led;
     float size;
 };
-class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer {
+class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
   public:
     explicit WallEditor(WallProcessor &);
     ~WallEditor() override;
@@ -86,9 +86,9 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     juce::TextButton abA{"A"}, abB{"B"}, abAToB{"A>B"}, abBToA{"B>A"};
     juce::TextButton libraryButton{"Library"}, matchLoudness{"Drive to target"};
     Readout gainReduction{"gain_reduction", "Gain reduction", 22}, shortTerm{"short_term", "Short-term", 22},
-        integrated{"integrated", "Integrated", 22}, truePeak{"true_peak_reading", "True peak", 22},
+        integrated{"integrated", "Integrated", 22}, truePeak{"true_peak_reading", "True peak max", 22},
         inputLevel{"input_level", "Input", 23}, outputLevel{"output_level", "Output", 23};
-    juce::Label guidance;
+    juce::Label guidance, monitoring;
     std::unique_ptr<suite::PresetLibrary> presetLibrary;
     std::unique_ptr<suite::PresetBrowser> presetBrowser;
     juce::TooltipWindow tooltip{this, 650};

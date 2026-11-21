@@ -25,7 +25,7 @@ The fortress mark pulses on quarter notes from the DAW transport, including afte
 - **Library:** Save, rename, and delete your own presets in Documents/Alan Marcero/openWallLimiter/Presets. Search and favourite factory or saved presets there. Factory presets stay read-only.
 - **Window:** Drag the corner to resize. The aspect ratio is not locked: the layout scales evenly and stays centred. The minimum keeps buttons readable, and the size is saved with the session.
 - **True peak and Oversampling:** Enable True peak for protection against peaks between samples. Choose Off, 2x, 4x, 8x, or 16x oversampling. True peak uses at least 4x.
-- **Meters:** View gain reduction, short-term and integrated loudness, sample peaks, estimated true peak, and an eight-second history. Reset measurements for a new pass.
+- **Meters:** View gain reduction on its own scale, short-term and integrated loudness, peak levels held for one second, true peak max, and an eight-second history. Meters read the limiter output, so Gain match, Delta, and Bypass change only what you hear. Input and Output keep a red dot after a peak above 0 dBFS. Click True peak max or a dot to clear it, or reset all measurements for a new pass.
 - **Gain match and Delta:** Match levels for comparison or listen to the difference between processed and original audio.
 - **Dither:** Choose Off, 24-bit, or 16-bit psychoacoustic noise-shaped TPDF dither.
 - **Bypass:** Bypass the complete limiter.

@@ -82,6 +82,7 @@ WallLook::WallLook() {
     setColour(juce::PopupMenu::textColourId, paper);
     setColour(juce::PopupMenu::highlightedBackgroundColourId, brass);
     setColour(juce::PopupMenu::highlightedTextColourId, ink);
+    setColour(juce::TextButton::buttonOnColourId, brass);
     setColour(juce::TextButton::textColourOffId, muted);
     setColour(juce::TextButton::textColourOnId, ink);
     setColour(juce::TooltipWindow::backgroundColourId, panel);
@@ -89,13 +90,13 @@ WallLook::WallLook() {
     setColour(juce::TooltipWindow::outlineColourId, brass);
 }
 juce::Font WallLook::getTextButtonFont(juce::TextButton&, int) { return font(14, true); }
-void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const juce::Colour &, bool hover,
-                                    bool down) {
+void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const juce::Colour &colour,
+                                    bool hover, bool down) {
     const bool on = b.getToggleState();
     auto r = b.getLocalBounds().toFloat().reduced(.5f);
-    g.setColour(on ? brass : juce::Colour(hover || down ? 0xff1e2c33 : 0xff152026));
+    g.setColour(on ? colour : juce::Colour(hover || down ? 0xff1e2c33 : 0xff152026));
     g.fillRoundedRectangle(r, 4);
-    g.setColour(on ? brass.brighter(.1f) : juce::Colour(0xff283842));
+    g.setColour(on ? colour.brighter(.1f) : juce::Colour(0xff283842));
     g.drawRoundedRectangle(r, 4, 1);
     if (b.hasKeyboardFocus(true)) {
         g.setColour(paper);
@@ -226,6 +227,10 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     toggle("gain_match");
     toggle("delta");
     toggle("bypass");
+    // Monitoring toggles change only what you hear, so they light in red.
+    std::ranges::for_each(std::array{"gain_match", "delta", "bypass"}, [this](const char *id) {
+        buttons[id]->setColour(juce::TextButton::buttonOnColourId, red);
+    });
     buttons["true_peak"]->setTooltip("Uses at least 4x processing and a brickwall 16-phase reconstructed-peak "
                                      "lookahead guard with zero ceiling reserve. Meter is a 4x true-peak estimate.");
     buttons["delta"]->setTooltip("Listen to processed output minus the latency-aligned original. This "
@@ -376,12 +381,21 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
     std::ranges::for_each(readouts, [this](Readout *readout) { content.addAndMakeVisible(readout); });
     gainReduction.setTooltip("Highest gain reduction in the last second.");
+    truePeak.setTooltip("Highest true peak since the last reset. "
+                        "The dot turns amber above the Ceiling and red above 0 dBTP. Click to reset it.");
+    truePeak.onClick = [this] { wallProcessor.resetTruePeak(); };
     inputLevel.setTooltip("Highest input peak in the last second. "
                           "The dot stays red after a peak above 0 dBFS. Click to clear it.");
     outputLevel.setTooltip("Highest output peak in the last second. "
                            "The dot stays red after a peak above 0 dBFS. Click to clear it.");
     inputLevel.onClick = [this] { inputClipped = false; };
     outputLevel.onClick = [this] { outputClipped = false; };
+    monitoring.setComponentID("monitoring_banner");
+    monitoring.setFont(font(12, true));
+    monitoring.setColour(juce::Label::backgroundColourId, red);
+    monitoring.setColour(juce::Label::textColourId, ink);
+    monitoring.setJustificationType(juce::Justification::centred);
+    content.addChildComponent(monitoring);
     guidance.setComponentID("loudness_guidance");
     guidance.setFont(font(12));
     guidance.setColour(juce::Label::textColourId, paper);
@@ -469,13 +483,22 @@ void WallEditor::timerCallback() {
     integrated.show(reading(wallProcessor.integratedLufs.load(), " LUFS"), paper);
     const float tp = wallProcessor.truePeakDb.load();
     auto tpLed = ledOff;
-    if (tp > -1.f)
+    // A 0.01 dB margin keeps a guarded ceiling from lighting the dot.
+    if (tp > wallProcessor.parameters.getRawParameterValue("ceiling")->load() + .01f)
         tpLed = brass;
     if (tp > 0.f)
         tpLed = red;
     truePeak.show(reading(tp, " dBTP"), paper, tpLed);
     inputLevel.show(reading(inputHold.value, " dB"), blue, inputClipped ? red : ledOff);
     outputLevel.show(reading(outputHold.value, " dB"), brass, outputClipped ? red : ledOff);
+    juce::StringArray monitors;
+    std::ranges::for_each(std::array{"bypass", "delta", "gain_match"}, [&](const char *id) {
+        if (wallProcessor.parameters.getRawParameterValue(id)->load() > .5f)
+            monitors.add(wallProcessor.parameters.getParameter(id)->getName(64));
+    });
+    monitoring.setText(monitors.joinIntoString(", ") + " on. Meters read the limiter output.",
+                       juce::dontSendNotification);
+    monitoring.setVisible(!monitors.isEmpty());
     guidance.setText(wall::loudnessGuidance(lufsMode, custom, wallProcessor.integratedLufs.load(),
                                             wallProcessor.shortLufs.load()),
                      juce::dontSendNotification);
@@ -548,6 +571,7 @@ void WallEditor::resized() {
     inputLevel.setBounds(40, 570, 140, 50);
     outputLevel.setBounds(948, 570, 140, 50);
     guidance.setBounds(584, 695, 512, 24);
+    monitoring.setBounds(456, 504, 424, 22);
     if (presetBrowser)
         presetBrowser->setBounds(690, 88, 406, 560);
     juce::AudioProcessorEditor::resized();
