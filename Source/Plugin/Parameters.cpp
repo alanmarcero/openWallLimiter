@@ -61,30 +61,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     };
     number("threshold", "Threshold", -30, 0, .01f, 0, 1, gain, plain);
     number("ceiling", "Ceiling", -30, 0, .01f, -1, 1, ceiling, plain);
-    choice("mode", "Algorithm", modeNames, 0);
+    choice("mode", "Style", modeNames, 0);
     number("release", "Release", .1f, 10, .01f, 1, .4f, multiple, plain);
     number("clip", "Clip", 0, 100, .1f, 0, 1, percent, plain);
     number("upward", "Upward", 0, 10, .01f, 0, 1, gain, plain);
-    number("stereo_link", "Transient Link", 0, 100, .1f, 100, 1, percent, plain);
+    number("stereo_link", "Transient link", 0, 100, .1f, 100, 1, percent, plain);
     choice("oversampling", "Oversampling", {"Off", "2x", "4x", "8x", "16x"}, 2);
-    boolean("true_peak", "True Peak", true);
+    boolean("true_peak", "True peak", true);
     choice("dither", "Dither", {"Off", "24-bit Shaped", "16-bit Shaped"}, 0);
-    boolean("gain_match", "Gain Match", false);
+    boolean("gain_match", "Gain match", false);
     boolean("delta", "Delta", false);
     boolean("bypass", "Bypass", false);
-    number("highpass_hz", "High Pass Frequency", 10, 200, .1f, 20, .35f, frequency, hertz);
-    choice("highpass_slope", "High Pass Slope", slopeNames, 3);
-    boolean("highpass_on", "High Pass", true);
-    number("lowpass_hz", "Low Pass Frequency", 8000, 24000, 10, 20000, 1, frequency, hertz);
-    choice("lowpass_slope", "Low Pass Slope", slopeNames, 3);
-    boolean("lowpass_on", "Low Pass", true);
+    number("highpass_hz", "High pass frequency", 10, 200, .1f, 20, .35f, frequency, hertz);
+    choice("highpass_slope", "High pass slope", slopeNames, 3);
+    boolean("highpass_on", "High pass", true);
+    number("lowpass_hz", "Low pass frequency", 8000, 24000, 10, 20000, 1, frequency, hertz);
+    choice("lowpass_slope", "Low pass slope", slopeNames, 3);
+    boolean("lowpass_on", "Low pass", true);
     number("lookahead_ms", "Lookahead", 0, Limiter::maxLookaheadMs, .01f, 5, 1, time, millis);
-    number("release_link", "Release Link", 0, 100, .1f, 100, 1, percent, plain);
-    number("input_gain", "Input Drive", -12, 12, .1f, 0, 1, gain, plain);
-    number("stereo_width", "Stereo Width", 0, 200, .5f, 100, 1, percent, plain);
-    number("tone_tilt", "Spectral Tilt", -6, 6, .1f, 0, 1, gain, plain);
-    choice("lufs_mode", "Loudness Target", lufsModeNames, 0);
-    number("lufs_target", "Custom Target", lufsCustomMin, lufsCustomMax, .1f, lufsStreaming, 1,
+    number("release_link", "Release link", 0, 100, .1f, 100, 1, percent, plain);
+    number("input_gain", "Input drive", -12, 12, .1f, 0, 1, gain, plain);
+    number("stereo_width", "Stereo width", 0, 200, .5f, 100, 1, percent, plain);
+    number("tone_tilt", "Spectral tilt", -6, 6, .1f, 0, 1, gain, plain);
+    choice("lufs_mode", "Loudness target", lufsModeNames, 0);
+    number("lufs_target", "Custom target", lufsCustomMin, lufsCustomMax, .1f, lufsStreaming, 1,
            [](float value) { return fixed(value, 1) + " LUFS"; }, plain);
     return layout;
 }

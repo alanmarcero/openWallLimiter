@@ -30,7 +30,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     void timerCallback() override;
     void slider(const char *id, bool rotary);
     void combo(const char *id, const juce::StringArray &);
-    void toggle(const char *id, const char *label);
+    void toggle(const char *id);
     void drawGraph(juce::Graphics &);
     void paintContent(juce::Graphics &);
     // Holds every control at the design size. resized() scales it.
@@ -56,7 +56,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     juce::TextButton reset{"Reset meters"}, link{"Link levels"};
     juce::TextButton undoButton{"Undo"}, redoButton{"Redo"};
     juce::TextButton abA{"A"}, abB{"B"}, abAToB{"A>B"}, abBToA{"B>A"};
-    juce::TextButton libraryButton{"Library"}, matchLoudness{"Match"};
+    juce::TextButton libraryButton{"Library"}, matchLoudness{"Drive to target"};
     std::unique_ptr<suite::PresetLibrary> presetLibrary;
     std::unique_ptr<suite::PresetBrowser> presetBrowser;
     juce::TooltipWindow tooltip{this, 650};

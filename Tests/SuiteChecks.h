@@ -252,7 +252,8 @@ inline void typedValues() {
     require(text("release", 1.f) == "1.0x" && text("release", 1.35f) == "1.35x", "release multiple");
     require(text("lookahead_ms", 5.f) == "5.0 ms" && text("lookahead_ms", 10.f) == "10 ms", "lookahead time");
     require(text("lufs_target", -14.f) == "-14.0 LUFS", "loudness target");
-    require(std::abs(typed("clip", "50") - 50.f) < .01f && std::abs(typed("clip", "50%") - 50.f) < .01f, "percent");
+    require(std::abs(typed("clip", "50") - 50.f) < .01f && std::abs(typed("clip", "50%") - 50.f) < .01f,
+            "percent");
     require(std::abs(typed("lowpass_hz", "20k") - 20000.f) < 1.f, "k suffix");
     require(std::abs(typed("lowpass_hz", "12.5 kHz") - 12500.f) < 1.f, "kHz suffix");
     require(std::abs(typed("highpass_hz", "35 Hz") - 35.f) < .01f, "Hz suffix");
@@ -279,7 +280,8 @@ inline void layout(juce::AudioProcessorEditor &editor) {
             require(child->getHeight() >= 40 && child->getWidth() >= 40, small.c_str());
         const auto dial = id + " dial is smaller than 64 px";
         if (auto *slider = dynamic_cast<juce::Slider *>(child); slider != nullptr && slider->isRotary())
-            require(slider->getWidth() >= 64 && slider->getHeight() - slider->getTextBoxHeight() >= 64, dial.c_str());
+            require(slider->getWidth() >= 64 && slider->getHeight() - slider->getTextBoxHeight() >= 64,
+                    dial.c_str());
     });
     auto *library = dynamic_cast<juce::Button *>(find(editor, "preset_library"));
     library->setToggleState(true, juce::sendNotificationSync);
@@ -303,6 +305,19 @@ inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &ed
             "A/B copy or library button missing");
     require(find(editor, "lufs_mode") && find(editor, "lufs_target") && find(editor, "lufs_match"),
             "loudness target controls missing");
+    const auto hostName = [&](const char *id) { return processor.parameters.getParameter(id)->getName(64); };
+    std::ranges::for_each(std::array{"release", "clip", "upward", "stereo_link", "release_link", "lookahead_ms",
+                                     "input_gain", "stereo_width", "tone_tilt"},
+                          [&](const char *id) {
+                              const auto width = juce::GlyphArrangement::getStringWidth(
+                                  juce::Font(juce::FontOptions(12.f)), hostName(id));
+                              require(width <= 74.f, "knob caption is wider than its 74 px column");
+                          });
+    std::ranges::for_each(std::array{"highpass_on", "lowpass_on", "true_peak", "gain_match", "delta", "bypass"},
+                          [&](const char *id) {
+                              auto *toggle = dynamic_cast<juce::Button *>(find(editor, id));
+                              require(toggle->getButtonText() == hostName(id), "toggle text is not the host name");
+                          });
     const float before = processor.parameters.getRawParameterValue("threshold")->load();
     auto *threshold = processor.parameters.getParameter("threshold");
     threshold->beginChangeGesture();
@@ -323,7 +338,8 @@ inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &ed
     auto *content = find(editor, "content");
     const float scale = 900.f / float(WallProcessor::defaultEditorHeight);
     const auto scaledUndo = editor.getLocalArea(undo, undo->getLocalBounds().toFloat());
-    require(std::abs(scaledUndo.getWidth() - 64.f * scale) < .5f && std::abs(scaledUndo.getHeight() - 40.f * scale) < .5f,
+    require(std::abs(scaledUndo.getWidth() - 64.f * scale) < .5f
+                && std::abs(scaledUndo.getHeight() - 40.f * scale) < .5f,
             "resized layout did not scale x and y by one factor");
     const auto scaledContent = editor.getLocalArea(content, content->getLocalBounds().toFloat());
     require(std::abs(scaledContent.getX() - (float(editor.getWidth()) - scaledContent.getRight())) < .5f,

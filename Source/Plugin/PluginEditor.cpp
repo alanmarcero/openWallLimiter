@@ -5,6 +5,7 @@
 #include "suite/PresetLibrary.h"
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 #include <vector>
 namespace {
 const juce::Colour ink{0xff0d1317}, panel{0xff152026}, brass{0xffffbe3b}, paper{0xffe6f0f5},
@@ -18,6 +19,9 @@ void text(juce::Graphics &g, const juce::String &s, juce::Rectangle<int> r, floa
     g.setFont(font(size));
     g.drawText(s, r, justify);
 }
+// Knob order, left to right.
+constexpr std::array<const char *, 9> knobIds{"release", "clip", "upward", "stereo_link", "release_link",
+                                              "lookahead_ms", "input_gain", "stereo_width", "tone_tilt"};
 juce::String reading(float v, const char *unit) {
     return std::isfinite(v) && v > -99 ? wall::fixed(v, 1) + unit : juce::String("--") + unit;
 }
@@ -130,8 +134,8 @@ void WallEditor::combo(const char *id, const juce::StringArray &items) {
     comboAttachments.push_back(std::make_unique<ComboAttachment>(wallProcessor.parameters, id, *c));
     combos.emplace(id, std::move(c));
 }
-void WallEditor::toggle(const char *id, const char *label) {
-    auto b = std::make_unique<juce::TextButton>(label);
+void WallEditor::toggle(const char *id) {
+    auto b = std::make_unique<juce::TextButton>(wallProcessor.parameters.getParameter(id)->getName(64));
     b->setComponentID(id);
     b->setClickingTogglesState(true);
     content.addAndMakeVisible(*b);
@@ -167,12 +171,12 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     combo("lowpass_slope", wall::slopeNames);
     combo("oversampling", {"Off", "2x", "4x", "8x", "16x"});
     combo("dither", {"Off", "24-bit Shaped", "16-bit Shaped"});
-    toggle("highpass_on", "High pass");
-    toggle("lowpass_on", "Low pass");
-    toggle("true_peak", "True peak");
-    toggle("gain_match", "Gain match");
-    toggle("delta", "Delta");
-    toggle("bypass", "Bypass");
+    toggle("highpass_on");
+    toggle("lowpass_on");
+    toggle("true_peak");
+    toggle("gain_match");
+    toggle("delta");
+    toggle("bypass");
     buttons["true_peak"]->setTooltip("Uses at least 4x processing and a brickwall 16-phase reconstructed-peak "
                                      "lookahead guard with zero ceiling reserve. Meter is a 4x true-peak estimate.");
     buttons["delta"]->setTooltip("Listen to processed output minus the latency-aligned original. This "
@@ -376,7 +380,7 @@ void WallEditor::timerCallback() {
     content.repaint(40, 590, 140, 32);
     content.repaint(948, 590, 140, 32);
     content.repaint(20, 10, 56, 56);
-    content.repaint(590, 688, 510, 40);
+    content.repaint(584, 688, 512, 40);
     content.repaint(24, 800, 1072, 24);
 }
 void WallEditor::resized() {
@@ -423,9 +427,9 @@ void WallEditor::resized() {
     sliders["input_gain"]->setBounds(674, 560, 74, 96);
     sliders["stereo_width"]->setBounds(750, 560, 74, 96);
     sliders["tone_tilt"]->setBounds(826, 560, 74, 96);
-    combos["lufs_mode"]->setBounds(88, 688, 168, 40);
-    sliders["lufs_target"]->setBounds(264, 688, 220, 40);
-    matchLoudness.setBounds(492, 688, 88, 40);
+    combos["lufs_mode"]->setBounds(112, 688, 150, 40);
+    sliders["lufs_target"]->setBounds(270, 688, 180, 40);
+    matchLoudness.setBounds(458, 688, 116, 40);
     combos["oversampling"]->setBounds(122, 756, 88, 40);
     buttons["true_peak"]->setBounds(222, 756, 104, 40);
     combos["dither"]->setBounds(398, 756, 138, 40);
@@ -505,12 +509,19 @@ void WallEditor::paintContent(juce::Graphics &g) {
     box(g, {599, 89, 497, 75});
     text(g, "Pre-limiter high-pass", {34, 170, 220, 18}, 11, muted);
     text(g, "Pre-limiter low-pass", {866, 170, 220, 18}, 11, muted, juce::Justification::centredRight);
-    text(g, "Character", {35, 204, 180, 25}, 17, brass);
     box(g, {24, 255, 166, 290});
     box(g, {930, 255, 166, 290});
-    text(g, "Threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred);
-    text(g, "Ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred);
-    text(g, "Maximum output", {943, 504, 140, 20}, 11, muted, juce::Justification::centred);
+    const std::array<std::tuple<const char *, juce::Rectangle<int>, float, juce::Colour, int>, 6> captions{{
+        {"mode", {35, 204, 180, 25}, 17, brass, juce::Justification::centredLeft},
+        {"threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred},
+        {"ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred},
+        {"lufs_mode", {24, 695, 88, 24}, 12, muted, juce::Justification::centredLeft},
+        {"oversampling", {24, 763, 98, 20}, 12, muted, juce::Justification::centredLeft},
+        {"dither", {348, 763, 50, 20}, 12, muted, juce::Justification::centredLeft}}};
+    std::ranges::for_each(captions, [&](const auto &caption) {
+        const auto &[id, area, size, colour, justify] = caption;
+        text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size, colour, justify);
+    });
     const std::array<juce::String, 4> values{reading(wallProcessor.reductionDb.load(), " dB"),
                                              reading(wallProcessor.shortLufs.load(), " LUFS"),
                                              reading(wallProcessor.integratedLufs.load(), " LUFS"),
@@ -530,27 +541,19 @@ void WallEditor::paintContent(juce::Graphics &g) {
         g.drawEllipse(884.0f, 290.0f, 12.0f, 12.0f, 1.2f);
     }
     drawGraph(g);
-    const std::array<const char *, 9> names{"Release", "Clip", "Upward", "Peak link", "Rel link",
-                                            "Lookahead", "In drive", "Width", "Tilt"};
-    const std::array<const char *, 9> desc{"Recovery", "Soft clip", "Low lift", "Peak link",
-                                           "Env link", "Attack cap", "Input trim", "Stereo M/S", "Tone balance"};
-    for (size_t i = 0; i < names.size(); ++i) {
-        const int x = 218 + int(i) * 76;
-        text(g, names[i], {x, 537, 74, 20}, 12, paper, juce::Justification::centred);
-        text(g, desc[i], {x, 656, 74, 17}, 9, muted, juce::Justification::centred);
-    }
+    std::ranges::for_each(knobIds, [&](const char *id) {
+        const auto name = wallProcessor.parameters.getParameter(id)->getName(64);
+        text(g, name, {sliders.at(id)->getX(), 537, 74, 20}, 12, paper, juce::Justification::centred);
+    });
     text(g, "Input", {40, 570, 70, 20}, 12, muted);
     text(g, reading(wallProcessor.inputDb.load(), " dB"), {40, 592, 140, 28}, 23, blue);
     text(g, "Output", {948, 570, 100, 20}, 12, muted);
     text(g, reading(wallProcessor.outputDb.load(), " dB"), {948, 592, 140, 28}, 23, brass);
-    text(g, "Target", {24, 695, 60, 24}, 12, muted);
     const int lufsMode = int(std::lround(wallProcessor.parameters.getRawParameterValue("lufs_mode")->load()));
     const float custom = wallProcessor.parameters.getRawParameterValue("lufs_target")->load();
     text(g,
          wall::loudnessGuidance(lufsMode, custom, wallProcessor.integratedLufs.load(), wallProcessor.shortLufs.load()),
-         {588, 695, 510, 24}, 12, paper);
-    text(g, "Oversampling", {24, 763, 98, 20}, 12, muted);
-    text(g, "Dither", {348, 763, 50, 20}, 12, muted);
+         {584, 695, 512, 24}, 12, paper);
     g.setColour(juce::Colour(0xff283842));
     g.drawHorizontalLine(744, 24, 1096);
     text(g,
