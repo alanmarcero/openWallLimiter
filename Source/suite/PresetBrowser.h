@@ -7,7 +7,8 @@ namespace suite {
 class PresetBrowser : public juce::Component, private juce::ListBoxModel {
   public:
     std::function<void(int)> onFactory;
-    std::function<void(const juce::MemoryBlock &)> onUser;
+    std::function<void(const juce::String &, const juce::MemoryBlock &)> onUser;
+    std::function<void(const juce::String &)> onSaved;
     std::function<juce::MemoryBlock()> capture;
 
     explicit PresetBrowser(PresetLibrary &libraryIn);

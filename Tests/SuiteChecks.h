@@ -209,7 +209,7 @@ inline void suiteBehavior() {
     browser.setSearchText("club");
     require(browser.rowCount() == 1, "browser search");
     set(presetProcessor, "threshold", -1.f);
-    require(presetProcessor.loadParameterState(library.loadUser("Club")), "user preset did not load");
+    require(presetProcessor.loadParameterState(library.loadUser("Club"), "Club"), "user preset did not load");
     require(std::abs(presetProcessor.parameters.getRawParameterValue("threshold")->load() + 4.f) < .02f,
             "user preset lost its threshold");
     presetProcessor.undo();
@@ -489,6 +489,88 @@ inline void inactiveControls(WallProcessor &processor, juce::AudioProcessorEdito
         control->setLookAndFeel(nullptr);
     });
     std::cout << "PASS inactive controls dimmed and explained, disabled controls dimmed\n";
+}
+inline void presetLabels() {
+    const juce::StringArray sessionIds{"dither", "gain_match", "delta", "bypass", "lufs_mode", "lufs_target"};
+    WallProcessor fresh, scrambled, untouched;
+    const auto scramble = [](juce::AudioProcessorParameter *parameter) {
+        parameter->setValueNotifyingHost(.37f);
+    };
+    std::ranges::for_each(scrambled.getParameters(), scramble);
+    std::ranges::for_each(untouched.getParameters(), scramble);
+    std::ranges::for_each(std::views::iota(0, fresh.getNumPrograms()), [&](int index) {
+        fresh.applyPreset(index);
+        scrambled.applyPreset(index);
+        const auto parameters = fresh.getParameters();
+        const bool same = std::ranges::all_of(parameters, [&](juce::AudioProcessorParameter *parameter) {
+            const auto &id = dynamic_cast<juce::AudioProcessorParameterWithID &>(*parameter).paramID;
+            const float other = scrambled.parameters.getParameter(id)->getValue();
+            if (sessionIds.contains(id))
+                return std::abs(other - untouched.parameters.getParameter(id)->getValue()) < 1.0e-6f;
+            return std::abs(parameter->getValue() - other) < 1.0e-6f;
+        });
+        const auto message = std::string(WallProcessor::factoryPresets()[size_t(index)].name)
+                           + " depends on earlier settings or reset a session setting";
+        require(same, message.c_str());
+    });
+    WallProcessor p;
+    require(p.presetLabel() == "Uplifting / Init Clean", "a new instance does not name its preset");
+    p.applyPreset(4);
+    require(p.presetLabel() == "Uplifting / Euphoria Wall", "the label does not name the loaded preset");
+    const auto edit = [&](const char *id, float value) {
+        auto *parameter = p.parameters.getParameter(id);
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+        parameter->endChangeGesture();
+    };
+    edit("bypass", 1.f);
+    require(p.presetLabel() == "Uplifting / Euphoria Wall", "a session setting marked the preset edited");
+    edit("threshold", -3.f);
+    require(p.presetLabel() == "Uplifting / Euphoria Wall *", "an edit did not mark the preset");
+    juce::MemoryBlock session;
+    p.getStateInformation(session);
+    WallProcessor restored;
+    restored.setStateInformation(session.getData(), int(session.getSize()));
+    require(restored.presetLabel() == "Uplifting / Euphoria Wall *", "the session lost the preset label");
+    p.undo();
+    require(p.presetLabel() == "Uplifting / Euphoria Wall", "undoing the only edit kept the mark");
+    p.undo();
+    p.undo();
+    require(p.presetLabel() == "Uplifting / Init Clean", "undoing a preset load kept its name");
+    p.redo();
+    require(p.presetLabel() == "Uplifting / Euphoria Wall", "redoing a preset load lost its name");
+    p.toggleAB();
+    require(p.presetLabel() == "Uplifting / Init Clean", "slot B shows the preset of slot A");
+    p.toggleAB();
+    require(p.presetLabel() == "Uplifting / Euphoria Wall", "slot A lost its preset label");
+    WallProcessor source;
+    set(p, "dither", 2.f);
+    require(p.loadParameterState(source.captureParameters(), "Club"), "user preset did not load");
+    require(p.presetLabel() == "Club", "the label does not name the user preset");
+    require(std::lround(p.parameters.getRawParameterValue("dither")->load()) == 2,
+            "a user preset reset Dither");
+    p.markPresetSaved("Mine");
+    require(p.presetLabel() == "Mine", "saving did not rename the label");
+    auto editor = std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
+    auto *box = dynamic_cast<juce::ComboBox *>(find(*editor, "presets"));
+    p.applyPreset(4);
+    edit("threshold", -3.f);
+    dynamic_cast<juce::Timer &>(*editor).timerCallback();
+    require(box->getText() == "Uplifting / Euphoria Wall *", "the preset box does not show the edit mark");
+    box->setSelectedId(5, juce::sendNotificationSync);
+    require(std::abs(p.parameters.getRawParameterValue("threshold")->load() + 8.8f) < .02f,
+            "picking the shown preset again did not reload it");
+    const auto temp = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    auto root = temp.getChildFile("openWallLimiter-favourites");
+    root.deleteRecursively();
+    const juce::StringArray factoryNames{"Uplifting / Init Clean", "Bass & Breaks / DnB 174"};
+    suite::PresetLibrary library(root.getChildFile("Presets"), factoryNames);
+    library.setFavorite("Bass & Breaks / DnB 174", true);
+    const auto entries = library.entries("");
+    require(entries.front().name == "Bass & Breaks / DnB 174" && entries.front().favorite,
+            "Favorite does nothing on a factory preset whose name has / or &");
+    root.deleteRecursively();
+    std::cout << "PASS preset label per slot and session, session settings kept, factory favourites\n";
 }
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));

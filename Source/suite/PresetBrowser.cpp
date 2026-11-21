@@ -44,8 +44,11 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
         if (!capture)
             return;
         const auto label = nameBox.getText().trim();
-        if (library.save(label.isEmpty() ? "User preset" : label, capture())) {
+        const auto name = label.isEmpty() ? juce::String("User preset") : label;
+        if (library.save(name, capture())) {
             hint.setText("Saved", juce::dontSendNotification);
+            if (onSaved)
+                onSaved(name);
             refresh();
         } else {
             hint.setText("Factory presets stay read-only", juce::dontSendNotification);
@@ -127,7 +130,7 @@ void PresetBrowser::loadRow(int row) {
     } else if (onUser) {
         const auto block = library.loadUser(entry.name);
         if (block.getSize() > 0)
-            onUser(block);
+            onUser(entry.name, block);
     }
 }
 void PresetBrowser::selectedRowsChanged(int row) {

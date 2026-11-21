@@ -33,7 +33,7 @@ juce::File PresetLibrary::favoritesFile() const {
     return dir.getParentDirectory().getChildFile("favorites.txt");
 }
 bool PresetLibrary::isFactory(const juce::String &name) const {
-    return factoryNames.contains(sanitize(name));
+    return factoryNames.contains(name) || factoryNames.contains(sanitize(name));
 }
 juce::StringArray PresetLibrary::readFavorites() const {
     return juce::StringArray::fromLines(favoritesFile().loadFileAsString());
@@ -87,7 +87,10 @@ bool PresetLibrary::remove(const juce::String &name) {
     return true;
 }
 void PresetLibrary::setFavorite(const juce::String &name, bool favorite) {
-    const auto clean = sanitize(name);
+    // Factory names keep their "/" and "&", which sanitize() would replace.
+    auto clean = sanitize(name);
+    if (factoryNames.contains(name))
+        clean = name;
     if (clean.isEmpty())
         return;
     if (!isFactory(clean) && !fileFor(clean).existsAsFile())

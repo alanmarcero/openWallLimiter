@@ -92,6 +92,8 @@ void ParameterUndo::parameterValueChanged(int index, float newValue) {
     if (openGestures <= 0 && groupDepth <= 0)
         return;
     undo.perform(new ParameterChangeAction(*this, index, old, newValue));
+    if (onEdit)
+        onEdit(index);
 }
 bool ParameterUndo::applyNormalized(int index, float value) {
     if (index < 0 || index >= int(parameters.size()))

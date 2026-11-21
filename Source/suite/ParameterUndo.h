@@ -18,6 +18,8 @@ class ParameterUndo : private juce::AudioProcessorParameter::Listener {
     void beginGroup(const juce::String &name);
     void endGroup();
     void performTree(juce::AudioProcessorValueTreeState &state, const juce::ValueTree &next, const juce::String &name);
+    // Runs after each recorded edit, with the parameter index.
+    std::function<void(int)> onEdit;
 
     class Group {
       public:

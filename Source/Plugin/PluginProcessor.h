@@ -50,7 +50,11 @@ class WallProcessor final : public juce::AudioProcessor {
     void applyPreset(int index);
     static const std::vector<WallPreset> &factoryPresets();
     juce::MemoryBlock captureParameters();
-    bool loadParameterState(const juce::MemoryBlock &);
+    // Loads a user preset. Session settings stay as they are.
+    bool loadParameterState(const juce::MemoryBlock &, const juce::String &name);
+    // The loaded preset's name, with " *" after an edit since the load.
+    juce::String presetLabel() const;
+    void markPresetSaved(const juce::String &name);
     void toggleAB();
     void copyAB(int from, int to);
     int activeAB() const noexcept { return abCompare.active(); }
@@ -129,6 +133,7 @@ class WallProcessor final : public juce::AudioProcessor {
     bool ready = false;
     uint32_t randomState = 0x91a5c3u;
     suite::ABCompare abCompare;
+    std::vector<bool> sessionParameter;
     int editorWidth = defaultEditorWidth, editorHeight = defaultEditorHeight, currentProgram = 0;
     float randomUnit() noexcept;
     juce::ValueTree sanitizeTree(juce::ValueTree);

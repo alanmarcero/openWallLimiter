@@ -329,22 +329,15 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     prevPreset.setTitle("Previous preset");
     prevPreset.setTooltip("Previous preset");
     prevPreset.onClick = [this] {
-        const int numItems = presets.getNumItems();
-        if (numItems <= 0) return;
-        const int cur = presets.getSelectedItemIndex();
-        const int next = (cur <= 0 ? numItems : cur) - 1;
-        presets.setSelectedItemIndex(next, juce::sendNotificationSync);
+        const int count = wallProcessor.getNumPrograms();
+        wallProcessor.applyPreset((wallProcessor.getCurrentProgram() + count - 1) % count);
     };
     content.addAndMakeVisible(prevPreset);
     nextPreset.setComponentID("next_preset");
     nextPreset.setTitle("Next preset");
     nextPreset.setTooltip("Next preset");
     nextPreset.onClick = [this] {
-        const int numItems = presets.getNumItems();
-        if (numItems <= 0) return;
-        const int cur = presets.getSelectedItemIndex();
-        const int next = (cur + 1) % numItems;
-        presets.setSelectedItemIndex(next, juce::sendNotificationSync);
+        wallProcessor.applyPreset((wallProcessor.getCurrentProgram() + 1) % wallProcessor.getNumPrograms());
     };
     content.addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
@@ -417,8 +410,11 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     presetLibrary = std::make_unique<suite::PresetLibrary>(suite::PresetLibrary::defaultDirectory("openWallLimiter"),
                                                            factoryNames);
     presetBrowser = std::make_unique<suite::PresetBrowser>(*presetLibrary);
-    presetBrowser->onFactory = [this](int index) { presets.setSelectedItemIndex(index, juce::sendNotificationSync); };
-    presetBrowser->onUser = [this](const juce::MemoryBlock &block) { wallProcessor.loadParameterState(block); };
+    presetBrowser->onFactory = [this](int index) { wallProcessor.applyPreset(index); };
+    presetBrowser->onUser = [this](const juce::String &name, const juce::MemoryBlock &block) {
+        wallProcessor.loadParameterState(block, name);
+    };
+    presetBrowser->onSaved = [this](const juce::String &name) { wallProcessor.markPresetSaved(name); };
     presetBrowser->capture = [this] { return wallProcessor.captureParameters(); };
     content.addChildComponent(*presetBrowser);
     const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
@@ -631,8 +627,10 @@ void WallEditor::timerCallback() {
         if (auto *label = dynamic_cast<juce::Label *>(child))
             label->setText(shown, juce::dontSendNotification);
     });
-    if (!presets.isPopupActive() && presets.getSelectedItemIndex() != wallProcessor.getCurrentProgram())
-        presets.setSelectedItemIndex(wallProcessor.getCurrentProgram(), juce::dontSendNotification);
+    // A label that matches no menu item clears the selection, so picking that preset again reloads it.
+    const auto label = wallProcessor.presetLabel();
+    if (!presets.isPopupActive() && presets.getText() != label)
+        presets.setText(label, juce::dontSendNotification);
     content.repaint(240, 323, 640, 173);
     content.repaint(20, 10, 56, 56);
     content.repaint(24, 800, 1072, 24);

@@ -17,6 +17,29 @@ float db(float x) {
 float finite(float x) {
     return std::isfinite(x) ? std::clamp(x, -64.f, 64.f) : 0.f;
 }
+// Presets never change these, so a preset load keeps the user's monitoring and delivery setup.
+constexpr std::array<const char *, 6> sessionIds{"dither",   "gain_match", "delta",
+                                                 "bypass",   "lufs_mode",  "lufs_target"};
+const juce::Identifier presetNameId{"presetName"}, presetEditedId{"presetEdited"};
+// Swaps one state property with a stored value, so undo and redo both swap it back.
+// It acts on the current state tree, because replaceState() swaps the tree object out.
+struct PropertySwap final : juce::UndoableAction {
+    PropertySwap(juce::AudioProcessorValueTreeState &stateIn, const juce::Identifier &idIn, juce::var valueIn)
+        : state(stateIn), id(idIn), value(std::move(valueIn)) {}
+    bool perform() override {
+        const auto previous = state.state.getProperty(id);
+        state.state.setProperty(id, value, nullptr);
+        if (value.isVoid())
+            state.state.removeProperty(id, nullptr);
+        value = previous;
+        return true;
+    }
+    bool undo() override { return perform(); }
+    int getSizeInUnits() override { return int(sizeof(*this)); }
+    juce::AudioProcessorValueTreeState &state;
+    juce::Identifier id;
+    juce::var value;
+};
 // Keeps the largest value until the editor swaps it out.
 void raise(std::atomic<float> &peak, float value) noexcept {
     float current = peak.load(std::memory_order_relaxed);
@@ -32,6 +55,18 @@ WallProcessor::WallProcessor()
       parameterUndo(*this, undoManager) {
     for (size_t i = 0; i < ids.size(); ++i)
         values[i] = parameters.getRawParameterValue(ids[i]);
+    std::ranges::for_each(getParameters(), [this](juce::AudioProcessorParameter *parameter) {
+        const auto &id = dynamic_cast<juce::AudioProcessorParameterWithID &>(*parameter).paramID;
+        const auto matches = [&](const char *session) { return id == session; };
+        sessionParameter.push_back(std::ranges::any_of(sessionIds, matches));
+    });
+    // The first recorded edit after a preset load marks the label, in the same undo step as the edit.
+    parameterUndo.onEdit = [this](int index) {
+        if (sessionParameter[size_t(index)] || bool(parameters.state[presetEditedId]))
+            return;
+        undoManager.perform(new PropertySwap(parameters, presetEditedId, true));
+    };
+    parameters.state.setProperty(presetNameId, factoryPresets().front().name, nullptr);
     abCompare.seed(captureParameters());
 }
 bool WallProcessor::isBusesLayoutSupported(const BusesLayout &l) const {
@@ -463,12 +498,29 @@ void WallProcessor::restoreBlock(const juce::MemoryBlock &block, bool undoable, 
     if (auto xml = getXmlFromBinary(block.getData(), int(block.getSize())))
         restoreTree(juce::ValueTree::fromXml(*xml), undoable, undoName);
 }
-bool WallProcessor::loadParameterState(const juce::MemoryBlock &block) {
+bool WallProcessor::loadParameterState(const juce::MemoryBlock &block, const juce::String &name) {
     auto xml = getXmlFromBinary(block.getData(), int(block.getSize()));
     if (xml == nullptr || !xml->hasTagName(parameters.state.getType()))
         return false;
-    restoreTree(juce::ValueTree::fromXml(*xml), true, "Preset");
+    auto tree = sanitizeTree(juce::ValueTree::fromXml(*xml));
+    std::ranges::for_each(sessionIds, [&](const char *id) {
+        const float current = parameters.getRawParameterValue(id)->load();
+        tree.getChildWithProperty("id", id).setProperty("value", current, nullptr);
+    });
+    tree.setProperty(presetNameId, name, nullptr).setProperty(presetEditedId, false, nullptr);
+    restoreTree(tree, true, "Preset");
     return true;
+}
+juce::String WallProcessor::presetLabel() const {
+    // Sessions saved before the label existed show the host program name.
+    const juce::var programName{factoryPresets()[size_t(currentProgram)].name};
+    auto label = parameters.state.getProperty(presetNameId, programName).toString();
+    if (parameters.state[presetEditedId])
+        label += " *";
+    return label;
+}
+void WallProcessor::markPresetSaved(const juce::String &name) {
+    parameters.state.setProperty(presetNameId, name, nullptr).setProperty(presetEditedId, false, nullptr);
 }
 void WallProcessor::setStoredEditorSize(int width, int height) {
     editorWidth = std::clamp(width, minEditorWidth, maxEditorWidth);
@@ -793,7 +845,9 @@ void WallProcessor::applyPreset(int index) {
         return;
     currentProgram = index;
     suite::ParameterUndo::Group group(parameterUndo, "Preset");
-    std::ranges::for_each(getParameters(), [](juce::AudioProcessorParameter *parameter) {
+    std::ranges::for_each(getParameters(), [this](juce::AudioProcessorParameter *parameter) {
+        if (sessionParameter[size_t(parameter->getParameterIndex())])
+            return;
         parameter->beginChangeGesture();
         parameter->setValueNotifyingHost(parameter->getDefaultValue());
         parameter->endChangeGesture();
@@ -806,6 +860,8 @@ void WallProcessor::applyPreset(int index) {
         parameter->setValueNotifyingHost(parameter->convertTo0to1(entry.second));
         parameter->endChangeGesture();
     });
+    undoManager.perform(new PropertySwap(parameters, presetNameId, presets[static_cast<size_t>(index)].name));
+    undoManager.perform(new PropertySwap(parameters, presetEditedId, false));
 }
 juce::AudioProcessorEditor *WallProcessor::createEditor() {
     return new WallEditor(*this);
