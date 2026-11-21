@@ -4,7 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace suite {
-class PresetBrowser : public juce::Component, private juce::ListBoxModel {
+class PresetBrowser : public juce::Component, private juce::ListBoxModel, private juce::Timer {
   public:
     std::function<void(int)> onFactory;
     std::function<void(const juce::String &, const juce::MemoryBlock &)> onUser;
@@ -23,7 +23,10 @@ class PresetBrowser : public juce::Component, private juce::ListBoxModel {
     int getNumRows() override { return rowCount(); }
     void paintListBoxItem(int row, juce::Graphics &, int width, int height, bool selected) override;
     void selectedRowsChanged(int row) override;
+    void timerCallback() override { disarm(); }
     void updateButtons();
+    // Puts Save and Delete back after an unconfirmed "Replace?" or "Delete?".
+    void disarm();
     void loadRow(int row);
 
     PresetLibrary &library;
@@ -34,5 +37,6 @@ class PresetBrowser : public juce::Component, private juce::ListBoxModel {
     juce::TextButton save{"Save"}, renameButton{"Rename"}, removeButton{"Delete"}, favoriteButton{"Favorite"};
     juce::Label hint;
     int selected = -1;
+    juce::TextButton *armed = nullptr;
 };
 } // namespace suite

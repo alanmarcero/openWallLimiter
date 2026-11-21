@@ -597,6 +597,41 @@ inline void slotHistories() {
     require(!p.canUndo() && !p.canRedo(), "copying into a slot kept its old undo history");
     std::cout << "PASS one undo history per A/B slot\n";
 }
+inline void confirmations() {
+    const auto temp = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    auto root = temp.getChildFile("openWallLimiter-confirm");
+    root.deleteRecursively();
+    suite::PresetLibrary library(root.getChildFile("Presets"), {"Factory A"});
+    suite::PresetBrowser browser(library);
+    WallProcessor source;
+    browser.capture = [&] { return source.captureParameters(); };
+    const auto savedThreshold = [&] {
+        WallProcessor reader;
+        reader.loadParameterState(library.loadUser("Mine"), "Mine");
+        return reader.parameters.getRawParameterValue("threshold")->load();
+    };
+    auto *save = dynamic_cast<juce::TextButton *>(find(browser, "preset_save"));
+    auto *remove = dynamic_cast<juce::TextButton *>(find(browser, "preset_delete"));
+    dynamic_cast<juce::TextEditor *>(find(browser, "preset_name"))->setText("Mine", false);
+    save->onClick();
+    require(library.loadUser("Mine").getSize() > 0, "the first save failed");
+    set(source, "threshold", -5.f);
+    save->onClick();
+    require(save->getButtonText() == "Replace?" && std::abs(savedThreshold()) < .02f,
+            "Save replaced a preset without asking");
+    save->onClick();
+    require(save->getButtonText() == "Save" && std::abs(savedThreshold() + 5.f) < .02f,
+            "the second click did not replace the preset");
+    browser.setSearchText("Mine");
+    dynamic_cast<juce::ListBox *>(find(browser, "preset_list"))->selectRow(0);
+    remove->onClick();
+    require(remove->getButtonText() == "Delete?" && library.loadUser("Mine").getSize() > 0,
+            "Delete removed a preset without asking");
+    remove->onClick();
+    require(library.loadUser("Mine").getSize() == 0, "the second click did not delete the preset");
+    root.deleteRecursively();
+    std::cout << "PASS inline confirm before replacing or deleting a preset\n";
+}
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
     require(lookahead != nullptr, "lookahead slider missing");

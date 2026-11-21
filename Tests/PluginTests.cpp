@@ -20,6 +20,7 @@ int main(int argc, char **argv) {
         checks::typedValues();
         checks::presetLabels();
         checks::slotHistories();
+        checks::confirmations();
         checks::meters();
         checks::monitoringMeters();
         checks::routing();

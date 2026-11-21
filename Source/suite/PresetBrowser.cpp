@@ -23,6 +23,7 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
     nameBox.setTextToShowWhenEmpty("Preset name", muted);
     nameBox.setComponentID("preset_name");
     nameBox.setTitle("Preset name");
+    nameBox.onTextChange = [this] { disarm(); };
     addAndMakeVisible(nameBox);
     list.setModel(this);
     list.setComponentID("preset_list");
@@ -45,6 +46,16 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
             return;
         const auto label = nameBox.getText().trim();
         const auto name = label.isEmpty() ? juce::String("User preset") : label;
+        // Replacing a saved preset takes a second click within three seconds.
+        if (armed != &save && library.loadUser(name).getSize() > 0) {
+            disarm();
+            armed = &save;
+            save.setButtonText("Replace?");
+            save.setTitle("Replace?");
+            startTimer(3000);
+            return;
+        }
+        disarm();
         if (library.save(name, capture())) {
             hint.setText("Saved", juce::dontSendNotification);
             if (onSaved)
@@ -67,6 +78,15 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
     removeButton.onClick = [this] {
         if (selected < 0 || selected >= rowCount())
             return;
+        if (armed != &removeButton) {
+            disarm();
+            armed = &removeButton;
+            removeButton.setButtonText("Delete?");
+            removeButton.setTitle("Delete?");
+            startTimer(3000);
+            return;
+        }
+        disarm();
         if (library.remove(shown[size_t(selected)].name)) {
             hint.setText("Deleted", juce::dontSendNotification);
             refresh();
@@ -133,7 +153,16 @@ void PresetBrowser::loadRow(int row) {
             onUser(entry.name, block);
     }
 }
+void PresetBrowser::disarm() {
+    stopTimer();
+    armed = nullptr;
+    save.setButtonText("Save");
+    save.setTitle("Save");
+    removeButton.setButtonText("Delete");
+    removeButton.setTitle("Delete");
+}
 void PresetBrowser::selectedRowsChanged(int row) {
+    disarm();
     selected = row;
     updateButtons();
     loadRow(row);
