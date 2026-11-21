@@ -12,6 +12,8 @@ class ParameterUndo : private juce::AudioProcessorParameter::Listener {
     ParameterUndo(juce::AudioProcessor &processor, juce::UndoManager &undoIn);
     ~ParameterUndo() override;
 
+    // A/B slots keep separate histories, so the owner rebinds the manager on a slot switch.
+    void setUndoManager(juce::UndoManager &next) noexcept { undo = &next; }
     void suspend();
     void resume();
     void rescan();
@@ -38,7 +40,7 @@ class ParameterUndo : private juce::AudioProcessorParameter::Listener {
     void parameterGestureChanged(int index, bool starting) override;
     bool applyNormalized(int index, float value);
 
-    juce::UndoManager &undo;
+    juce::UndoManager *undo;
     std::vector<juce::AudioProcessorParameter *> parameters;
     std::vector<float> last;
     int suspendCount = 0, openGestures = 0, groupDepth = 0;

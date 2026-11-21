@@ -52,7 +52,7 @@ WallProcessor::WallProcessor()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "OpenWallLimiter", wall::parameterLayout()),
-      parameterUndo(*this, undoManager) {
+      parameterUndo(*this, undoManagers[0]) {
     for (size_t i = 0; i < ids.size(); ++i)
         values[i] = parameters.getRawParameterValue(ids[i]);
     std::ranges::for_each(getParameters(), [this](juce::AudioProcessorParameter *parameter) {
@@ -64,7 +64,7 @@ WallProcessor::WallProcessor()
     parameterUndo.onEdit = [this](int index) {
         if (sessionParameter[size_t(index)] || bool(parameters.state[presetEditedId]))
             return;
-        undoManager.perform(new PropertySwap(parameters, presetEditedId, true));
+        undoManagers[size_t(abCompare.active())].perform(new PropertySwap(parameters, presetEditedId, true));
     };
     parameters.state.setProperty(presetNameId, factoryPresets().front().name, nullptr);
     abCompare.seed(captureParameters());
@@ -528,13 +528,13 @@ void WallProcessor::setStoredEditorSize(int width, int height) {
 }
 void WallProcessor::toggleAB() {
     restoreBlock(abCompare.toggle(captureParameters()), false, {});
-    undoManager.clearUndoHistory();
+    parameterUndo.setUndoManager(undoManagers[size_t(abCompare.active())]);
 }
 void WallProcessor::copyAB(int from, int to) {
-    if (auto next = abCompare.copy(from, to, captureParameters())) {
+    if (auto next = abCompare.copy(from, to, captureParameters()))
         restoreBlock(*next, false, {});
-        undoManager.clearUndoHistory();
-    }
+    // The copy replaces the destination setup, so its old undo steps no longer apply.
+    undoManagers[size_t(to & 1)].clearUndoHistory();
 }
 void WallProcessor::matchLoudnessTarget() {
     const int mode = int(std::lround(parameters.getRawParameterValue("lufs_mode")->load()));
@@ -598,7 +598,7 @@ void WallProcessor::setStateInformation(const void *data, int size) {
         if (auto *child = xml->getChildElement(i); child != nullptr && child->hasTagName("AB"))
             xml->removeChildElement(child, true);
     restoreTree(juce::ValueTree::fromXml(*xml), false, {});
-    undoManager.clearUndoHistory();
+    std::ranges::for_each(undoManagers, [](juce::UndoManager &history) { history.clearUndoHistory(); });
     if (program >= 0 && program < getNumPrograms())
         currentProgram = program;
     if (!haveAB) {
@@ -613,6 +613,7 @@ void WallProcessor::setStateInformation(const void *data, int size) {
         abCompare.setActive(slot);
         abCompare.setSlot(slot, captureParameters());
     }
+    parameterUndo.setUndoManager(undoManagers[size_t(abCompare.active())]);
     if (auto *editor = getActiveEditor())
         if (editor->getWidth() != editorWidth || editor->getHeight() != editorHeight)
             editor->setSize(editorWidth, editorHeight);
@@ -860,8 +861,9 @@ void WallProcessor::applyPreset(int index) {
         parameter->setValueNotifyingHost(parameter->convertTo0to1(entry.second));
         parameter->endChangeGesture();
     });
-    undoManager.perform(new PropertySwap(parameters, presetNameId, presets[static_cast<size_t>(index)].name));
-    undoManager.perform(new PropertySwap(parameters, presetEditedId, false));
+    auto &history = undoManagers[size_t(abCompare.active())];
+    history.perform(new PropertySwap(parameters, presetNameId, presets[static_cast<size_t>(index)].name));
+    history.perform(new PropertySwap(parameters, presetEditedId, false));
 }
 juce::AudioProcessorEditor *WallProcessor::createEditor() {
     return new WallEditor(*this);

@@ -58,10 +58,10 @@ class WallProcessor final : public juce::AudioProcessor {
     void toggleAB();
     void copyAB(int from, int to);
     int activeAB() const noexcept { return abCompare.active(); }
-    void undo() { undoManager.undo(); }
-    void redo() { undoManager.redo(); }
-    bool canUndo() const { return undoManager.canUndo(); }
-    bool canRedo() const { return undoManager.canRedo(); }
+    void undo() { undoManagers[size_t(abCompare.active())].undo(); }
+    void redo() { undoManagers[size_t(abCompare.active())].redo(); }
+    bool canUndo() const { return undoManagers[size_t(abCompare.active())].canUndo(); }
+    bool canRedo() const { return undoManagers[size_t(abCompare.active())].canRedo(); }
     void matchLoudnessTarget();
     int storedEditorWidth() const noexcept { return editorWidth; }
     int storedEditorHeight() const noexcept { return editorHeight; }
@@ -75,7 +75,8 @@ class WallProcessor final : public juce::AudioProcessor {
     static constexpr int maxEditorHeight = 1800;
     static constexpr int sincPadHalfSpan = 16;
     juce::AudioProcessorValueTreeState parameters;
-    juce::UndoManager undoManager;
+    // One undo history per A/B slot.
+    std::array<juce::UndoManager, 2> undoManagers;
     suite::ParameterUndo parameterUndo;
     // Peaks since the last editor read. The editor reads them with exchange(noReading).
     // noReading tells the editor that no audio block ran since that read.

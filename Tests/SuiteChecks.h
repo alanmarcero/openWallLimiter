@@ -572,6 +572,31 @@ inline void presetLabels() {
     root.deleteRecursively();
     std::cout << "PASS preset label per slot and session, session settings kept, factory favourites\n";
 }
+inline void slotHistories() {
+    WallProcessor p;
+    const auto edit = [&](float value) {
+        auto *threshold = p.parameters.getParameter("threshold");
+        threshold->beginChangeGesture();
+        threshold->setValueNotifyingHost(threshold->convertTo0to1(value));
+        threshold->endChangeGesture();
+    };
+    const auto threshold = [&] { return p.parameters.getRawParameterValue("threshold")->load(); };
+    edit(-4.f);
+    p.toggleAB();
+    require(!p.canUndo(), "slot B shows the undo history of slot A");
+    edit(-7.f);
+    p.toggleAB();
+    require(p.canUndo() && std::abs(threshold() + 4.f) < .02f, "slot A lost its undo history");
+    p.undo();
+    require(std::abs(threshold()) < .02f, "undo in slot A applied a state from slot B");
+    p.redo();
+    p.toggleAB();
+    p.undo();
+    require(std::abs(threshold()) < .02f && p.canRedo(), "slot B lost its own undo history");
+    p.copyAB(0, 1);
+    require(!p.canUndo() && !p.canRedo(), "copying into a slot kept its old undo history");
+    std::cout << "PASS one undo history per A/B slot\n";
+}
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
     require(lookahead != nullptr, "lookahead slider missing");

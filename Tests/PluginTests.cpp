@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
         checks::suiteBehavior();
         checks::typedValues();
         checks::presetLabels();
+        checks::slotHistories();
         checks::meters();
         checks::monitoringMeters();
         checks::routing();

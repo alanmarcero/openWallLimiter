@@ -32,7 +32,7 @@ struct ParameterTreeAction : juce::UndoableAction {
     int getSizeInUnits() override { return int(sizeof(*this)); }
 };
 
-ParameterUndo::ParameterUndo(juce::AudioProcessor &processor, juce::UndoManager &undoIn) : undo(undoIn) {
+ParameterUndo::ParameterUndo(juce::AudioProcessor &processor, juce::UndoManager &undoIn) : undo(&undoIn) {
     for (auto *parameter : processor.getParameters()) {
         parameters.push_back(parameter);
         last.push_back(parameter->getValue());
@@ -54,7 +54,7 @@ void ParameterUndo::rescan() {
 }
 void ParameterUndo::beginGroup(const juce::String &name) {
     if (groupDepth == 0)
-        undo.beginNewTransaction(name);
+        undo->beginNewTransaction(name);
     ++groupDepth;
 }
 void ParameterUndo::endGroup() {
@@ -63,15 +63,15 @@ void ParameterUndo::endGroup() {
 }
 void ParameterUndo::performTree(juce::AudioProcessorValueTreeState &state, const juce::ValueTree &next,
                                 const juce::String &name) {
-    undo.beginNewTransaction(name);
-    undo.perform(new ParameterTreeAction(*this, state, state.copyState().createCopy(), next.createCopy()));
+    undo->beginNewTransaction(name);
+    undo->perform(new ParameterTreeAction(*this, state, state.copyState().createCopy(), next.createCopy()));
 }
 void ParameterUndo::parameterGestureChanged(int, bool starting) {
     if (suspendCount > 0)
         return;
     if (starting) {
         if (openGestures == 0 && groupDepth == 0)
-            undo.beginNewTransaction();
+            undo->beginNewTransaction();
         ++openGestures;
     } else if (openGestures > 0) {
         --openGestures;
@@ -91,7 +91,7 @@ void ParameterUndo::parameterValueChanged(int index, float newValue) {
     // Knob drags and button clicks send a gesture. Host automation without one stays out of the stack.
     if (openGestures <= 0 && groupDepth <= 0)
         return;
-    undo.perform(new ParameterChangeAction(*this, index, old, newValue));
+    undo->perform(new ParameterChangeAction(*this, index, old, newValue));
     if (onEdit)
         onEdit(index);
 }
