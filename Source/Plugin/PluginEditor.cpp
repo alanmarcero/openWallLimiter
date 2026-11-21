@@ -20,6 +20,11 @@ void text(juce::Graphics &g, const juce::String &s, juce::Rectangle<int> r, floa
     g.setFont(font(size));
     g.drawText(s, r, justify);
 }
+// Matches the style table in README.md.
+constexpr std::array<const char *, 5> modeCharacters{
+    "Balanced, with fast recovery for transients.", "Transparent, with a slower attack and rounded recovery.",
+    "Fast recovery with more transient clipping.", "Slow recovery without intentional clipping.",
+    "Steady recovery."};
 // Knob order, left to right.
 constexpr std::array<const char *, 9> knobIds{"release", "clip", "upward", "stereo_link", "release_link",
                                               "lookahead_ms", "input_gain", "stereo_width", "tone_tilt"};
@@ -170,7 +175,6 @@ void WallEditor::slider(const char *id, bool rotary) {
     s->setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
     // Shift-drag uses JUCE's velocity mode as a fine drag, about one fifth of the normal speed.
     s->setVelocityModeParameters(1.0, 1, .05, true, juce::ModifierKeys::shiftModifier);
-    s->setTooltip(juce::String(id) + ": drag to adjust, double-click to reset, or type a value.");
     content.addAndMakeVisible(*s);
     sliderAttachments.push_back(std::make_unique<SliderAttachment>(wallProcessor.parameters, id, *s));
     sliders.emplace(id, std::move(s));
@@ -193,6 +197,21 @@ void WallEditor::toggle(const char *id) {
     content.addAndMakeVisible(*b);
     buttonAttachments.push_back(std::make_unique<ButtonAttachment>(wallProcessor.parameters, id, *b));
     buttons.emplace(id, std::move(b));
+}
+void WallEditor::describe(const char *id, const juce::String &description) {
+    auto *parameter = wallProcessor.parameters.getParameter(id);
+    const auto range = parameter->getText(0.f, 0) + " to " + parameter->getText(1.f, 0);
+    const auto tip = parameter->getName(64) + ": " + range + ". " + description
+                   + " Shift-drag for fine steps, double-click to reset, or type a value.";
+    auto &target = *sliders.at(id);
+    if (target.getTooltip() == tip)
+        return;
+    // The value box copies the tooltip only when JUCE creates it, so set it here too.
+    target.setTooltip(tip);
+    std::ranges::for_each(target.getChildren(), [&](juce::Component *child) {
+        if (auto *box = dynamic_cast<juce::Label *>(child))
+            box->setTooltip(tip);
+    });
 }
 WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcessor(p) {
     setLookAndFeel(&look);
@@ -242,26 +261,17 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     buttons["delta"]->setTooltip("Listen to processed output minus the latency-aligned original. This "
                                  "monitoring signal can exceed the output ceiling.");
     buttons["gain_match"]->setTooltip("Remove threshold makeup gain for level-matched comparison.");
-    sliders["stereo_link"]->setTooltip("Transient Link blends peak detection across channels before gain reduction.");
-    sliders["release_link"]->setTooltip("Release Link blends each channel's recovery envelope toward shared recovery.");
-    sliders["lookahead_ms"]->setTooltip(
-        "Maximum transient anticipation. Each limiter mode's attack window is capped by this value. "
-        "Reported host latency does not follow this knob: it is the limiter delay, the longest oversampling "
-        "filter delay, and the 128-sample true-peak guard. The editor shows that latency in milliseconds and samples.");
-    sliders["input_gain"]->setTooltip("Pre-limiter input drive/trim (-12 dB to +12 dB) before peak detection.");
-    sliders["stereo_width"]->setTooltip("Pre-limiter Mid/Side stereo width (0% mono to 200% wide).");
-    sliders["tone_tilt"]->setTooltip("Pre-limiter spectral tilt (-6 dB warm to +6 dB bright) around 1.2 kHz.");
-    const std::array<const char *, 5> hints{
-        "2.2 ms attack, 20 ms hold. Transients release faster than sustained limiting.",
-        "4.5 ms attack, 24 ms hold, and a rounded release stage for transparent dynamics.",
-        "1.2 ms attack, 18 ms hold, punchy fast release, and transient clipping.",
-        "4.5 ms attack, 26 ms hold, slow release, and no intentional clipping.",
-        "1.8 ms attack, 20 ms hold, and a vintage dual-stage opto recovery curve."};
+    buttons["bypass"]->setTooltip("Plays the original audio. The meters keep reading the limiter output.");
+    buttons["highpass_on"]->setTooltip("Turns on the high pass filter before the limiter.");
+    buttons["lowpass_on"]->setTooltip("Turns on the low pass filter before the limiter.");
+    combos["highpass_slope"]->setTooltip("Sets the high pass slope, from 12 to 96 dB per octave.");
+    combos["lowpass_slope"]->setTooltip("Sets the low pass slope, from 12 to 96 dB per octave.");
+    combos["oversampling"]->setTooltip("Runs the limiter at a higher rate. True peak uses at least 4x.");
+    combos["dither"]->setTooltip("Adds noise-shaped TPDF dither for 24-bit or 16-bit delivery.");
     for (size_t i = 0; i < modes.size(); ++i) {
         modes[i].setButtonText(wall::modeNames[int(i)]);
         modes[i].setComponentID("mode" + juce::String(int(i)));
         modes[i].setTitle(wall::modeNames[int(i)]);
-        modes[i].setTooltip(hints[i]);
         modes[i].onClick = [this, i] {
             auto *m = wallProcessor.parameters.getParameter("mode");
             m->beginChangeGesture();
@@ -318,6 +328,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     content.addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
     reset.setTitle("Reset meters");
+    reset.setTooltip("Clears loudness, true peak max and the clip dots.");
     reset.onClick = [this] {
         wallProcessor.resetMeters();
         inputClipped = outputClipped = false;
@@ -332,10 +343,22 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     slider("lufs_target", true);
     sliders["lufs_target"]->setSliderStyle(juce::Slider::LinearHorizontal);
     sliders["lufs_target"]->setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 22);
-    sliders["lufs_target"]->setTooltip("Custom loudness target, used when the target mode is Custom.");
+    describe("threshold", "Lowering it drives the audio into the limiter by the same amount.");
+    describe("ceiling", "The highest output level. True peak keeps peaks between samples under it too.");
+    describe("stereo_link", "Shares peak detection above 120 Hz between the channels. Bass below 120 Hz is "
+                            "always linked.");
+    describe("release_link", "Shares recovery between the channels. At 0% each channel recovers alone.");
+    describe("input_gain", "Changes the level before the limiter detects peaks.");
+    describe("stereo_width", "Sets mid/side width before the limiter. 0% is mono; 200% doubles the side.");
+    describe("tone_tilt", "Tilts the spectrum around 1.2 kHz before the limiter. +6 dB raises the highs "
+                          "by 3 dB and lowers the lows by 3 dB.");
+    describe("highpass_hz", "Sets the high pass cutoff before the limiter.");
+    describe("lowpass_hz", "Sets the low pass cutoff before the limiter.");
+    describe("lufs_target", "Sets the target that Custom uses.");
     matchLoudness.setComponentID("lufs_match");
     matchLoudness.setTitle("Drive to target");
-    matchLoudness.setTooltip("Add the difference between the current loudness and the target to input drive.");
+    matchLoudness.setTooltip("Adds the difference between the measured loudness and the target to "
+                             "Input drive.");
     matchLoudness.onClick = [this] { wallProcessor.matchLoudnessTarget(); };
     content.addAndMakeVisible(matchLoudness);
     undoButton.setComponentID("undo");
@@ -387,6 +410,8 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
     std::ranges::for_each(readouts, [this](Readout *readout) { content.addAndMakeVisible(readout); });
     gainReduction.setTooltip("Highest gain reduction in the last second.");
+    shortTerm.setTooltip("BS.1770 short-term loudness over the last 3 seconds.");
+    integrated.setTooltip("BS.1770 integrated loudness since the last reset.");
     truePeak.setTooltip("Highest true peak since the last reset. "
                         "The dot turns amber above the Ceiling and red above 0 dBTP. Click to reset it.");
     truePeak.onClick = [this] { wallProcessor.resetTruePeak(); };
@@ -478,6 +503,40 @@ void WallEditor::timerCallback() {
     const int active = int(wallProcessor.parameters.getRawParameterValue("mode")->load());
     for (size_t i = 0; i < modes.size(); ++i)
         modes[i].setToggleState(int(i) == active, juce::dontSendNotification);
+
+    // These tooltips quote times and levels from the current style and settings.
+    const auto &profile = wall::modeProfiles[size_t(active)];
+    const auto style = wall::modeNames[active];
+    const float release = wallProcessor.parameters.getRawParameterValue("release")->load();
+    const float lookahead = wallProcessor.parameters.getRawParameterValue("lookahead_ms")->load();
+    const float clip = wallProcessor.parameters.getRawParameterValue("clip")->load();
+    const float upward = wallProcessor.parameters.getRawParameterValue("upward")->load();
+    const auto fast = wall::milliseconds(float(profile.fast) * release);
+    const auto slow = wall::milliseconds(float(profile.slow) * release);
+    describe("release", "Scales recovery time. In " + style + ", transients recover in " + fast
+                            + " and sustained limiting in " + slow + ".");
+    describe("clip", "Transient peaks up to " + wall::fixed(float(profile.clipDb) * clip * .01f, 1)
+                         + " dB over the Ceiling go to a soft clipper instead of the limiter. " + style
+                         + " allows up to " + wall::fixed(float(profile.clipDb), 1) + " dB at 100%.");
+    describe("upward", "Raises quiet passages between about -60 and -18 LUFS by up to "
+                           + wall::fixed(upward, 1) + " dB. Below -60 LUFS it lowers noise by up to "
+                           + wall::fixed(std::min(6.f, .6f * upward), 1) + " dB.");
+    describe("lookahead_ms", "Looks ahead for peaks. Attack is a share of this time: "
+                                 + wall::milliseconds(float(profile.attackRatio) * lookahead) + " in " + style
+                                 + ". Host latency does not follow this control. It is the linear-phase "
+                                   "sub-cut delay, the limiter delay, the longest oversampling filter delay, "
+                                   "and the 128-sample true-peak guard. The editor shows that latency in "
+                                   "milliseconds and samples.");
+    std::ranges::for_each(std::views::iota(size_t{0}, modes.size()), [&](size_t i) {
+        const auto &each = wall::modeProfiles[i];
+        const auto share = juce::String(juce::roundToInt(each.attackRatio * 100.0)) + "% of Lookahead";
+        modes[i].setTooltip(juce::String(modeCharacters[i]) + " Attack "
+                            + wall::milliseconds(float(each.attackRatio) * lookahead) + " (" + share
+                            + "), hold " + wall::milliseconds(float(each.hold)) + ", recovery "
+                            + wall::milliseconds(float(each.fast) * release) + " to "
+                            + wall::milliseconds(float(each.slow) * release) + ".");
+    });
+
     undoButton.setEnabled(wallProcessor.canUndo());
     redoButton.setEnabled(wallProcessor.canRedo());
     abA.setToggleState(wallProcessor.activeAB() == 0, juce::dontSendNotification);

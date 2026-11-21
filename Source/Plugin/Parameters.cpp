@@ -7,6 +7,13 @@ juce::String fixed(float value, int decimals) {
     const float rounded = std::round(value * scale) / scale;
     return juce::String(rounded == 0.f ? 0.f : rounded, decimals);
 }
+juce::String milliseconds(float ms) {
+    if (ms < 9.95f)
+        return fixed(ms, 1) + " ms";
+    if (ms < 999.5f)
+        return juce::String(juce::roundToInt(ms)) + " ms";
+    return fixed(ms / 1000.f, 2) + " s";
+}
 juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     using Text = std::function<juce::String(float)>;
@@ -54,11 +61,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     const Text multiple = [](float value) {
         return fixed(value, juce::roundToInt(value * 100.f) % 10 != 0 ? 2 : 1) + "x";
     };
-    const Text time = [](float value) {
-        if (value < 9.95f)
-            return fixed(value, 1) + " ms";
-        return juce::String(juce::roundToInt(value)) + " ms";
-    };
     number("threshold", "Threshold", -30, 0, .01f, 0, 1, gain, plain);
     number("ceiling", "Ceiling", -30, 0, .01f, -1, 1, ceiling, plain);
     choice("mode", "Style", modeNames, 0);
@@ -78,7 +80,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout() {
     number("lowpass_hz", "Low pass frequency", 8000, 24000, 10, 20000, 1, frequency, hertz);
     choice("lowpass_slope", "Low pass slope", slopeNames, 3);
     boolean("lowpass_on", "Low pass", true);
-    number("lookahead_ms", "Lookahead", 0, Limiter::maxLookaheadMs, .01f, 5, 1, time, millis);
+    number("lookahead_ms", "Lookahead", 0, Limiter::maxLookaheadMs, .01f, 5, 1, milliseconds, millis);
     number("release_link", "Release link", 0, 100, .1f, 100, 1, percent, plain);
     number("input_gain", "Input drive", -12, 12, .1f, 0, 1, gain, plain);
     number("stereo_width", "Stereo width", 0, 200, .5f, 100, 1, percent, plain);

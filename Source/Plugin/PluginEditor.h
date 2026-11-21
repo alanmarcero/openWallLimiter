@@ -59,6 +59,8 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     void slider(const char *id, bool rotary);
     void combo(const char *id, const juce::StringArray &);
     void toggle(const char *id);
+    // Sets a slider tooltip from its host name and range, and copies it to the value box.
+    void describe(const char *id, const juce::String &description);
     void drawGraph(juce::Graphics &);
     void paintContent(juce::Graphics &);
     // Holds every control at the design size. resized() scales it.

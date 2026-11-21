@@ -242,6 +242,7 @@ int main(int argc, char **argv) {
         require(p.artworkPhase() > 0.875f, "SVG advances on audio time without host transport");
         checks::layout(*editor);
         checks::accessibility(*editor);
+        checks::tooltips(p, *editor);
         checks::controls(p, *editor);
         checks::editorSuite(p, *editor);
         auto *presetsBox = dynamic_cast<juce::ComboBox *>(checks::find(*editor, "presets"));

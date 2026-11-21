@@ -6,18 +6,6 @@
 
 namespace wall {
 namespace {
-// Attack ratios scale lookaheadMs (matching 2.2, 4.5, 1.2, 4.5, 1.8 ms at 5 ms lookahead).
-struct Profile {
-    double attackRatio, hold, fast, slow, sustainAttack, sustainRelease, classicDbPerSecond, clipDb;
-    bool rounded;
-};
-constexpr std::array<Profile, 5> profiles{{
-    {.44, 20, 40, 260, 200, 350, 0, 2.0, true},   // Modern
-    {.90, 24, 65, 360, 250, 400, 0, 1.0, true},   // Smooth
-    {.24, 18, 22, 130, 250, 200, 0, 2.5, true},   // Aggressive
-    {.90, 26, 90, 450, 200, 400, 0, 0.0, true},   // Safe
-    {.36, 20, 30, 240, 220, 320, 0, 1.8, true},   // Classic
-}};
 constexpr double maximumHoldSeconds = .040;
 
 double dbGain(double db) noexcept { return std::pow(10.0, db / 20.0); }
@@ -249,7 +237,7 @@ void Limiter::setSettings(const Settings& requested) noexcept {
     ceiling_ = dbGain(settings_.ceilingDb);
     upwardGain_ = dbGain(settings_.upwardDb);
 
-    const auto& profile = profiles[static_cast<std::size_t>(mode)];
+    const auto& profile = modeProfiles[static_cast<std::size_t>(mode)];
     const double scale = settings_.release * .001;
     releaseFast_ = slew(sampleRate_, profile.fast * scale);
     releaseSlow_ = slew(sampleRate_, profile.slow * scale);
@@ -283,7 +271,7 @@ void Limiter::setSettings(const Settings& requested) noexcept {
 }
 
 double Limiter::advanceRelease(Envelope& env, double heldDb, double kOverDb, double crest) const noexcept {
-    const auto& profile = profiles[static_cast<std::size_t>(settings_.mode)];
+    const auto& profile = modeProfiles[static_cast<std::size_t>(settings_.mode)];
     auto& release = env.releaseDb;
     const auto floorDb = std::max(heldDb, env.sustainDb);
     const auto transient = std::max(0.0, release - floorDb);

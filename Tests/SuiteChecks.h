@@ -402,6 +402,33 @@ inline void accessibility(juce::AudioProcessorEditor &editor) {
                           });
     std::cout << "PASS spoken titles, focusable sliders, accessible readouts\n";
 }
+inline void tooltips(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
+    std::ranges::for_each(find(editor, "content")->getChildren(), [](juce::Component *child) {
+        auto *slider = dynamic_cast<juce::Slider *>(child);
+        if (slider == nullptr)
+            return;
+        const auto id = slider->getComponentID();
+        const auto tip = slider->getTooltip();
+        const bool boxMatches = std::ranges::all_of(slider->getChildren(), [&](juce::Component *part) {
+            auto *box = dynamic_cast<juce::Label *>(part);
+            return box == nullptr || box->getTooltip() == tip;
+        });
+        const auto message = id.toStdString() + " tooltip lacks its name and range, or the value box differs";
+        require(tip.startsWith(slider->getTitle() + ": ") && tip.contains(" to ") && !tip.contains(id + ":")
+                    && boxMatches,
+                message.c_str());
+    });
+    set(processor, "mode", 0.f);
+    set(processor, "lookahead_ms", 10.f);
+    dynamic_cast<juce::Timer &>(editor).timerCallback();
+    auto *modern = dynamic_cast<juce::Button *>(find(editor, "mode0"));
+    require(modern->getTooltip().contains("Attack 4.4 ms (44% of Lookahead)"),
+            "style tooltip ignores Lookahead");
+    auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
+    require(lookahead->getTooltip().contains("4.4 ms in Modern"), "Lookahead tooltip ignores the style");
+    set(processor, "lookahead_ms", 5.f);
+    std::cout << "PASS tooltips from host names, ranges and DSP times\n";
+}
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
     require(lookahead != nullptr, "lookahead slider missing");

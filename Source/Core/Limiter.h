@@ -9,6 +9,20 @@ namespace wall {
 
 enum class Mode { Modern, Smooth, Aggressive, Safe, Classic };
 
+// Attack ratios scale lookaheadMs (matching 2.2, 4.5, 1.2, 4.5, 1.8 ms at 5 ms lookahead).
+// Times are in ms; the release times scale with the Release multiple. clipDb is the allowance at 100% Clip.
+struct ModeProfile {
+    double attackRatio, hold, fast, slow, sustainAttack, sustainRelease, classicDbPerSecond, clipDb;
+    bool rounded;
+};
+inline constexpr std::array<ModeProfile, 5> modeProfiles{{
+    {.44, 20, 40, 260, 200, 350, 0, 2.0, true},   // Modern
+    {.90, 24, 65, 360, 250, 400, 0, 1.0, true},   // Smooth
+    {.24, 18, 22, 130, 250, 200, 0, 2.5, true},   // Aggressive
+    {.90, 26, 90, 450, 200, 400, 0, 0.0, true},   // Safe
+    {.36, 20, 30, 240, 220, 320, 0, 1.8, true},   // Classic
+}};
+
 struct Settings {
     float thresholdDb = 0;
     float ceilingDb = -1;
