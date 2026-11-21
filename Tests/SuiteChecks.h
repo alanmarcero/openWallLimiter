@@ -1,6 +1,7 @@
 #pragma once
 #include "HostChecks.h"
 #include "LoudnessTarget.h"
+#include "PluginEditor.h"
 #include "TruePeakGuard.h"
 #include "suite/PresetBrowser.h"
 #include "suite/PresetLibrary.h"
@@ -428,6 +429,66 @@ inline void tooltips(WallProcessor &processor, juce::AudioProcessorEditor &edito
     require(lookahead->getTooltip().contains("4.4 ms in Modern"), "Lookahead tooltip ignores the style");
     set(processor, "lookahead_ms", 5.f);
     std::cout << "PASS tooltips from host names, ranges and DSP times\n";
+}
+inline void inactiveControls(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
+    const auto tick = [&] { dynamic_cast<juce::Timer &>(editor).timerCallback(); };
+    const std::array dependent{"highpass_hz", "highpass_slope", "clip", "lufs_target", "oversampling"};
+    set(processor, "highpass_on", 0.f);
+    set(processor, "mode", float(wall::Mode::Safe));
+    set(processor, "lufs_mode", 0.f);
+    set(processor, "true_peak", 1.f);
+    set(processor, "oversampling", 0.f);
+    tick();
+    std::ranges::for_each(dependent, [&](const char *id) {
+        auto *control = find(editor, id);
+        const auto message = std::string(id) + " does not look inactive while it has no effect";
+        require(control->isEnabled() && std::abs(control->getAlpha() - .4f) < .01f, message.c_str());
+    });
+    auto *highpass = dynamic_cast<juce::Slider *>(find(editor, "highpass_hz"));
+    require(highpass->getTooltip().contains("Turn on High pass"),
+            "inactive filter tooltip does not say what turns it on");
+    require(dynamic_cast<juce::Slider *>(find(editor, "clip"))->getTooltip().contains("No effect in Safe"),
+            "Clip tooltip does not explain Safe");
+    auto *oversampling = dynamic_cast<juce::ComboBox *>(find(editor, "oversampling"));
+    require(oversampling->getText() == "4x (True peak)", "Oversampling hides the rate True peak forces");
+    set(processor, "highpass_on", 1.f);
+    set(processor, "mode", 0.f);
+    set(processor, "lufs_mode", 3.f);
+    set(processor, "true_peak", 0.f);
+    tick();
+    std::ranges::for_each(dependent, [&](const char *id) {
+        const auto message = std::string(id) + " stayed dimmed after it took effect";
+        require(std::abs(find(editor, id)->getAlpha() - 1.f) < .01f, message.c_str());
+    });
+    require(oversampling->getText() == "Off", "Oversampling kept the True peak text");
+    set(processor, "lufs_mode", 0.f);
+    set(processor, "true_peak", 1.f);
+    set(processor, "oversampling", 2.f);
+    const auto coverage = [](juce::Component &control) {
+        const auto image = control.createComponentSnapshot(control.getLocalBounds());
+        double total = 0;
+        std::ranges::for_each(std::views::iota(0, image.getHeight()), [&](int y) {
+            std::ranges::for_each(std::views::iota(0, image.getWidth()),
+                                  [&](int x) { total += image.getPixelAt(x, y).getFloatAlpha(); });
+        });
+        return total;
+    };
+    WallLook look;
+    juce::Slider knob(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox);
+    juce::TextButton button("Undo");
+    juce::ComboBox choices;
+    choices.addItem("Off", 1);
+    choices.setSelectedId(1);
+    const std::array<juce::Component *, 3> disabled{&knob, &button, &choices};
+    std::ranges::for_each(disabled, [&](juce::Component *control) {
+        control->setLookAndFeel(&look);
+        control->setBounds(0, 0, 80, 80);
+        const double enabled = coverage(*control);
+        control->setEnabled(false);
+        require(coverage(*control) < .6 * enabled, "the look-and-feel does not dim a disabled control");
+        control->setLookAndFeel(nullptr);
+    });
+    std::cout << "PASS inactive controls dimmed and explained, disabled controls dimmed\n";
 }
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));

@@ -31,6 +31,22 @@ constexpr std::array<const char *, 9> knobIds{"release", "clip", "upward", "ster
 juce::String reading(float v, const char *unit) {
     return std::isfinite(v) && v > -99 ? wall::fixed(v, 1) + unit : juce::String("--") + unit;
 }
+// Inactive and disabled controls draw at this opacity.
+constexpr float dimAlpha = .4f;
+// Draws the rest of a look-and-feel call at dimAlpha when the control is disabled.
+struct DimWhenDisabled {
+    DimWhenDisabled(juce::Graphics &graphics, const juce::Component &control)
+        : g(graphics), dim(!control.isEnabled()) {
+        if (dim)
+            g.beginTransparencyLayer(dimAlpha);
+    }
+    ~DimWhenDisabled() {
+        if (dim)
+            g.endTransparencyLayer();
+    }
+    juce::Graphics &g;
+    const bool dim;
+};
 void box(juce::Graphics &g, juce::Rectangle<float> r) {
     g.setColour(panel.withAlpha(.94f));
     g.fillRoundedRectangle(r, 6);
@@ -97,6 +113,7 @@ WallLook::WallLook() {
 juce::Font WallLook::getTextButtonFont(juce::TextButton&, int) { return font(14, true); }
 void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const juce::Colour &colour,
                                     bool hover, bool down) {
+    const DimWhenDisabled dimmed(g, b);
     const bool on = b.getToggleState();
     auto r = b.getLocalBounds().toFloat().reduced(.5f);
     g.setColour(on ? colour : juce::Colour(hover || down ? 0xff1e2c33 : 0xff152026));
@@ -110,6 +127,7 @@ void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const ju
 }
 void WallLook::drawRotarySlider(juce::Graphics &g, int x, int y, int w, int h, float pos, float start,
                                 float end, juce::Slider &slider) {
+    const DimWhenDisabled dimmed(g, slider);
     auto r = juce::Rectangle<float>(float(x), float(y), float(w), float(h)).reduced(9);
     auto centre = r.getCentre();
     float radius = std::min(r.getWidth(), r.getHeight()) * .5f;
@@ -139,6 +157,7 @@ void WallLook::drawRotarySlider(juce::Graphics &g, int x, int y, int w, int h, f
 }
 void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, float position, float, float,
                                 juce::Slider::SliderStyle style, juce::Slider &slider) {
+    const DimWhenDisabled dimmed(g, slider);
     bool vertical = style == juce::Slider::LinearVertical;
     float cx = float(x) + float(w) * .5f, cy = float(y) + float(h) * .5f;
     g.setColour(juce::Colour(0xff06090a));
@@ -162,6 +181,11 @@ void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, f
         g.setColour(paper);
         g.drawRoundedRectangle(slider.getLocalBounds().toFloat().reduced(1), 4, 1);
     }
+}
+void WallLook::drawComboBox(juce::Graphics &g, int width, int height, bool down, int buttonX, int buttonY,
+                            int buttonW, int buttonH, juce::ComboBox &box) {
+    const DimWhenDisabled dimmed(g, box);
+    juce::LookAndFeel_V4::drawComboBox(g, width, height, down, buttonX, buttonY, buttonW, buttonH, box);
 }
 void WallEditor::slider(const char *id, bool rotary) {
     auto *parameter = wallProcessor.parameters.getParameter(id);
@@ -264,9 +288,6 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     buttons["bypass"]->setTooltip("Plays the original audio. The meters keep reading the limiter output.");
     buttons["highpass_on"]->setTooltip("Turns on the high pass filter before the limiter.");
     buttons["lowpass_on"]->setTooltip("Turns on the low pass filter before the limiter.");
-    combos["highpass_slope"]->setTooltip("Sets the high pass slope, from 12 to 96 dB per octave.");
-    combos["lowpass_slope"]->setTooltip("Sets the low pass slope, from 12 to 96 dB per octave.");
-    combos["oversampling"]->setTooltip("Runs the limiter at a higher rate. True peak uses at least 4x.");
     combos["dither"]->setTooltip("Adds noise-shaped TPDF dither for 24-bit or 16-bit delivery.");
     for (size_t i = 0; i < modes.size(); ++i) {
         modes[i].setButtonText(wall::modeNames[int(i)]);
@@ -345,16 +366,9 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     sliders["lufs_target"]->setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 22);
     describe("threshold", "Lowering it drives the audio into the limiter by the same amount.");
     describe("ceiling", "The highest output level. True peak keeps peaks between samples under it too.");
-    describe("stereo_link", "Shares peak detection above 120 Hz between the channels. Bass below 120 Hz is "
-                            "always linked.");
-    describe("release_link", "Shares recovery between the channels. At 0% each channel recovers alone.");
     describe("input_gain", "Changes the level before the limiter detects peaks.");
-    describe("stereo_width", "Sets mid/side width before the limiter. 0% is mono; 200% doubles the side.");
     describe("tone_tilt", "Tilts the spectrum around 1.2 kHz before the limiter. +6 dB raises the highs "
                           "by 3 dB and lowers the lows by 3 dB.");
-    describe("highpass_hz", "Sets the high pass cutoff before the limiter.");
-    describe("lowpass_hz", "Sets the low pass cutoff before the limiter.");
-    describe("lufs_target", "Sets the target that Custom uses.");
     matchLoudness.setComponentID("lufs_match");
     matchLoudness.setTitle("Drive to target");
     matchLoudness.setTooltip("Adds the difference between the measured loudness and the target to "
@@ -515,9 +529,6 @@ void WallEditor::timerCallback() {
     const auto slow = wall::milliseconds(float(profile.slow) * release);
     describe("release", "Scales recovery time. In " + style + ", transients recover in " + fast
                             + " and sustained limiting in " + slow + ".");
-    describe("clip", "Transient peaks up to " + wall::fixed(float(profile.clipDb) * clip * .01f, 1)
-                         + " dB over the Ceiling go to a soft clipper instead of the limiter. " + style
-                         + " allows up to " + wall::fixed(float(profile.clipDb), 1) + " dB at 100%.");
     describe("upward", "Raises quiet passages between about -60 and -18 LUFS by up to "
                            + wall::fixed(upward, 1) + " dB. Below -60 LUFS it lowers noise by up to "
                            + wall::fixed(std::min(6.f, .6f * upward), 1) + " dB.");
@@ -567,8 +578,59 @@ void WallEditor::timerCallback() {
     guidance.setText(wall::loudnessGuidance(lufsMode, custom, wallProcessor.integratedLufs.load(),
                                             wallProcessor.shortLufs.load()),
                      juce::dontSendNotification);
-    sliders["lufs_target"]->setEnabled(lufsMode == 3);
-    matchLoudness.setEnabled(lufsMode != 0);
+    const float loudest = std::max(wallProcessor.integratedLufs.load(), wallProcessor.shortLufs.load());
+    const bool measured = loudest > -99.f;
+    matchLoudness.setEnabled(lufsMode != 0 && measured);
+
+    // Controls with no effect right now draw dimmed, stay editable, and say what turns them on.
+    const bool highpassOn = wallProcessor.parameters.getRawParameterValue("highpass_on")->load() > .5f;
+    const bool lowpassOn = wallProcessor.parameters.getRawParameterValue("lowpass_on")->load() > .5f;
+    const bool safe = active == int(wall::Mode::Safe);
+    const bool mono = wallProcessor.getTotalNumInputChannels() < 2;
+    auto &oversampling = *combos["oversampling"];
+    const int rate = int(wallProcessor.parameters.getRawParameterValue("oversampling")->load());
+    const bool forced = wallProcessor.parameters.getRawParameterValue("true_peak")->load() > .5f && rate < 2;
+    const std::array<std::pair<juce::Component *, bool>, 10> live{{
+        {sliders["highpass_hz"].get(), highpassOn}, {combos["highpass_slope"].get(), highpassOn},
+        {sliders["lowpass_hz"].get(), lowpassOn}, {combos["lowpass_slope"].get(), lowpassOn},
+        {sliders["clip"].get(), !safe}, {sliders["lufs_target"].get(), lufsMode == 3},
+        {sliders["stereo_link"].get(), !mono}, {sliders["release_link"].get(), !mono},
+        {sliders["stereo_width"].get(), !mono}, {&oversampling, !forced}}};
+    std::ranges::for_each(live, [](const auto &control) {
+        control.first->setAlpha(control.second ? 1.f : dimAlpha);
+    });
+    const juce::String needsHighpass = highpassOn ? "" : " Turn on High pass to use it.";
+    const juce::String needsLowpass = lowpassOn ? "" : " Turn on Low pass to use it.";
+    const juce::String needsStereo = mono ? " Works on stereo tracks only." : "";
+    describe("highpass_hz", "Sets the high pass cutoff before the limiter." + needsHighpass);
+    describe("lowpass_hz", "Sets the low pass cutoff before the limiter." + needsLowpass);
+    combos["highpass_slope"]->setTooltip("Sets the high pass slope, 12 to 96 dB per octave." + needsHighpass);
+    combos["lowpass_slope"]->setTooltip("Sets the low pass slope, 12 to 96 dB per octave." + needsLowpass);
+    describe("stereo_link",
+             "Shares peak detection above 120 Hz between the channels. Bass below 120 Hz is always linked."
+                 + needsStereo);
+    describe("release_link",
+             "Shares recovery between the channels. At 0% each channel recovers alone." + needsStereo);
+    describe("stereo_width",
+             "Sets mid/side width before the limiter. 0% is mono; 200% doubles the side." + needsStereo);
+    const juce::String needsCustom = lufsMode == 3 ? "" : " Choose Custom in Loudness target to use it.";
+    describe("lufs_target", "Sets the target that Custom uses." + needsCustom);
+    auto clipNote = "Transient peaks up to " + wall::fixed(float(profile.clipDb) * clip * .01f, 1)
+                  + " dB over the Ceiling go to a soft clipper instead of the limiter. " + style
+                  + " allows up to " + wall::fixed(float(profile.clipDb), 1) + " dB at 100%.";
+    if (safe)
+        clipNote = "No effect in Safe. Choose another style to use it.";
+    describe("clip", clipNote);
+    oversampling.setTooltip("Runs the limiter at a higher rate. True peak uses at least 4x."
+                            + juce::String(forced ? " Turn off True peak to use Off or 2x." : ""));
+    // The closed combo box shows the rate that runs. Its popup still lists the saved choices.
+    auto shown = oversampling.getItemText(rate);
+    if (forced)
+        shown = "4x (True peak)";
+    std::ranges::for_each(oversampling.getChildren(), [&](juce::Component *child) {
+        if (auto *label = dynamic_cast<juce::Label *>(child))
+            label->setText(shown, juce::dontSendNotification);
+    });
     if (!presets.isPopupActive() && presets.getSelectedItemIndex() != wallProcessor.getCurrentProgram())
         presets.setSelectedItemIndex(wallProcessor.getCurrentProgram(), juce::dontSendNotification);
     content.repaint(240, 323, 640, 173);
@@ -622,9 +684,9 @@ void WallEditor::resized() {
     combos["lufs_mode"]->setBounds(112, 688, 150, 40);
     sliders["lufs_target"]->setBounds(270, 688, 180, 40);
     matchLoudness.setBounds(458, 688, 116, 40);
-    combos["oversampling"]->setBounds(122, 756, 88, 40);
-    buttons["true_peak"]->setBounds(222, 756, 104, 40);
-    combos["dither"]->setBounds(398, 756, 138, 40);
+    combos["oversampling"]->setBounds(122, 756, 150, 40);
+    buttons["true_peak"]->setBounds(284, 756, 104, 40);
+    combos["dither"]->setBounds(458, 756, 138, 40);
     buttons["gain_match"]->setBounds(640, 756, 115, 40);
     buttons["delta"]->setBounds(765, 756, 75, 40);
     buttons["bypass"]->setBounds(850, 756, 84, 40);
@@ -743,7 +805,7 @@ void WallEditor::paintContent(juce::Graphics &g) {
         {"ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"lufs_mode", {24, 695, 88, 24}, 12, muted, juce::Justification::centredLeft},
         {"oversampling", {24, 763, 98, 20}, 12, muted, juce::Justification::centredLeft},
-        {"dither", {348, 763, 50, 20}, 12, muted, juce::Justification::centredLeft}}};
+        {"dither", {408, 763, 50, 20}, 12, muted, juce::Justification::centredLeft}}};
     std::ranges::for_each(captions, [&](const auto &caption) {
         const auto &[id, area, size, colour, justify] = caption;
         text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size, colour, justify);

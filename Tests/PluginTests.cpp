@@ -243,6 +243,7 @@ int main(int argc, char **argv) {
         checks::layout(*editor);
         checks::accessibility(*editor);
         checks::tooltips(p, *editor);
+        checks::inactiveControls(p, *editor);
         checks::controls(p, *editor);
         checks::editorSuite(p, *editor);
         auto *presetsBox = dynamic_cast<juce::ComboBox *>(checks::find(*editor, "presets"));
