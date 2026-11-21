@@ -216,6 +216,51 @@ inline void suiteBehavior() {
     root.deleteRecursively();
     std::cout << "PASS programs, undo, A/B, user presets\n";
 }
+inline void typedValues() {
+    WallProcessor p;
+    const auto text = [&](const char *id, float value) {
+        auto *parameter = p.parameters.getParameter(id);
+        return parameter->getText(parameter->convertTo0to1(value), 0);
+    };
+    const auto typed = [&](const char *id, const juce::String &entry) {
+        auto *parameter = p.parameters.getParameter(id);
+        return parameter->convertFrom0to1(parameter->getValueForText(entry));
+    };
+    int floats = 0;
+    std::ranges::for_each(p.getParameters(), [&](juce::AudioProcessorParameter *parameter) {
+        auto *number = dynamic_cast<juce::AudioParameterFloat *>(parameter);
+        if (number == nullptr)
+            return;
+        ++floats;
+        const auto exact = number->paramID.toStdString() + ": typed display text does not return the value";
+        std::ranges::for_each(std::array{0.f, 1.f, parameter->getDefaultValue()}, [&](float position) {
+            const float back = parameter->getValueForText(parameter->getText(position, 0));
+            require(std::abs(back - position) < 1.0e-4f, exact.c_str());
+        });
+        const auto stable = number->paramID.toStdString() + ": display text changes after typing it";
+        std::ranges::for_each(std::array{.25f, .5f, .75f}, [&](float position) {
+            const auto shown = parameter->getText(position, 0);
+            require(parameter->getText(parameter->getValueForText(shown), 0) == shown, stable.c_str());
+        });
+    });
+    require(floats == 14, "float parameter count changed");
+    require(text("threshold", 0.f) == "0.0 dB" && text("threshold", -.02f) == "0.0 dB", "negative zero dB");
+    require(text("input_gain", 3.f) == "+3.0 dB" && text("tone_tilt", -2.5f) == "-2.5 dB", "signed dB");
+    require(text("ceiling", -1.f) == "-1.0 dB" && text("ceiling", -.15f) == "-0.15 dB", "ceiling dB");
+    require(text("highpass_hz", 20.f) == "20 Hz" && text("lowpass_hz", 20000.f) == "20.00 kHz", "frequency");
+    require(text("clip", 55.f) == "55%" && text("stereo_width", 125.f) == "125%", "whole percent");
+    require(text("release", 1.f) == "1.0x" && text("release", 1.35f) == "1.35x", "release multiple");
+    require(text("lookahead_ms", 5.f) == "5.0 ms" && text("lookahead_ms", 10.f) == "10 ms", "lookahead time");
+    require(text("lufs_target", -14.f) == "-14.0 LUFS", "loudness target");
+    require(std::abs(typed("clip", "50") - 50.f) < .01f && std::abs(typed("clip", "50%") - 50.f) < .01f, "percent");
+    require(std::abs(typed("lowpass_hz", "20k") - 20000.f) < 1.f, "k suffix");
+    require(std::abs(typed("lowpass_hz", "12.5 kHz") - 12500.f) < 1.f, "kHz suffix");
+    require(std::abs(typed("highpass_hz", "35 Hz") - 35.f) < .01f, "Hz suffix");
+    require(std::abs(typed("lookahead_ms", "0.0025 s") - 2.5f) < .01f, "s suffix");
+    require(std::abs(typed("lookahead_ms", "2.5 ms") - 2.5f) < .01f, "ms suffix");
+    require(std::abs(typed("threshold", "-6.5 dB") - typed("threshold", "-6.5")) < .001f, "dB suffix");
+    std::cout << "PASS typed values and display formats\n";
+}
 inline void editorSuite(WallProcessor &processor, juce::AudioProcessorEditor &editor) {
     auto *lookahead = dynamic_cast<juce::Slider *>(find(editor, "lookahead_ms"));
     require(lookahead != nullptr, "lookahead slider missing");

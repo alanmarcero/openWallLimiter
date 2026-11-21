@@ -2,6 +2,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 namespace wall {
 juce::AudioProcessorValueTreeState::ParameterLayout parameterLayout();
+// Rounds to `decimals` places and never shows "-0.0".
+juce::String fixed(float value, int decimals);
 inline const juce::StringArray modeNames{"Modern", "Smooth", "Aggressive", "Safe", "Classic"};
 inline const juce::StringArray slopeNames{"12 dB/oct", "24 dB/oct", "48 dB/oct", "72 dB/oct", "96 dB/oct"};
 inline const juce::StringArray lufsModeNames{"Off", "Streaming -14", "Club -9", "Custom"};

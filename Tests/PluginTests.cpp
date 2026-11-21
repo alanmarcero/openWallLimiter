@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     try {
         checks::latencyAndTargets();
         checks::suiteBehavior();
+        checks::typedValues();
         checks::routing();
         checks::quality();
         WallProcessor p;

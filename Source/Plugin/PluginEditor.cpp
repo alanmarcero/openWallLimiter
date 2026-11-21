@@ -19,7 +19,7 @@ void text(juce::Graphics &g, const juce::String &s, juce::Rectangle<int> r, floa
     g.drawText(s, r, justify);
 }
 juce::String reading(float v, const char *unit) {
-    return std::isfinite(v) && v > -99 ? juce::String(v, 1) + unit : juce::String("--") + unit;
+    return std::isfinite(v) && v > -99 ? wall::fixed(v, 1) + unit : juce::String("--") + unit;
 }
 void box(juce::Graphics &g, juce::Rectangle<float> r) {
     g.setColour(panel.withAlpha(.94f));
@@ -109,14 +109,12 @@ void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, f
         g.fillEllipse(position - 6, cy - 6, 12, 12);
     }
 }
-void WallEditor::slider(const char *id, const char *suffix, bool rotary) {
+void WallEditor::slider(const char *id, bool rotary) {
     auto s = std::make_unique<juce::Slider>();
     s->setComponentID(id);
     s->setName(id);
     s->setSliderStyle(rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
     s->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 96, 25);
-    s->setTextValueSuffix(suffix);
-    s->setNumDecimalPlacesToDisplay(1);
     s->setDoubleClickReturnValue(true, wallProcessor.parameters.getParameter(id)->convertFrom0to1(
                                            wallProcessor.parameters.getParameter(id)->getDefaultValue()));
     s->setTooltip(juce::String(id) + ": drag to adjust, double-click to reset, or type a value.");
@@ -147,19 +145,19 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     inputHistory.fill(-60);
     outputHistory.fill(-60);
     reductionHistory.fill(0);
-    slider("threshold", " dB", false);
-    slider("ceiling", " dB", false);
-    slider("release", "x", true);
-    slider("clip", "%", true);
-    slider("upward", " dB", true);
-    slider("stereo_link", "%", true);
-    slider("lookahead_ms", " ms", true);
-    slider("release_link", "%", true);
-    slider("input_gain", " dB", true);
-    slider("stereo_width", "%", true);
-    slider("tone_tilt", " dB", true);
-    slider("highpass_hz", " Hz", false);
-    slider("lowpass_hz", " Hz", false);
+    slider("threshold", false);
+    slider("ceiling", false);
+    slider("release", true);
+    slider("clip", true);
+    slider("upward", true);
+    slider("stereo_link", true);
+    slider("lookahead_ms", true);
+    slider("release_link", true);
+    slider("input_gain", true);
+    slider("stereo_width", true);
+    slider("tone_tilt", true);
+    slider("highpass_hz", false);
+    slider("lowpass_hz", false);
     for (auto id : {"highpass_hz", "lowpass_hz"})
         sliders[id]->setSliderStyle(juce::Slider::LinearHorizontal);
     combo("highpass_slope", wall::slopeNames);
@@ -255,7 +253,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     addAndMakeVisible(link);
     combo("lufs_mode", wall::lufsModeNames);
     combos["lufs_mode"]->setTooltip("Loudness target from the BS.1770 meter. Streaming is -14 LUFS. Club is -9 LUFS.");
-    slider("lufs_target", " LUFS", true);
+    slider("lufs_target", true);
     sliders["lufs_target"]->setSliderStyle(juce::Slider::LinearHorizontal);
     sliders["lufs_target"]->setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 22);
     sliders["lufs_target"]->setTooltip("Custom loudness target, used when the target mode is Custom.");

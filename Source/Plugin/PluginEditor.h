@@ -28,7 +28,7 @@ class WallEditor final : public juce::AudioProcessorEditor, private juce::Timer 
     using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     void timerCallback() override;
-    void slider(const char *id, const char *suffix, bool rotary);
+    void slider(const char *id, bool rotary);
     void combo(const char *id, const juce::StringArray &);
     void toggle(const char *id, const char *label);
     void drawGraph(juce::Graphics &);
