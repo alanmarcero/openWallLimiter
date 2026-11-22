@@ -257,6 +257,41 @@ int main(int argc, char **argv) {
                 "preset restores default lookahead");
         require(std::abs(p.parameters.getRawParameterValue("release_link")->load() - 100.0f) < .02f,
                 "preset restores default release link");
+        {
+            WallProcessor defaults;
+            const auto userPresetBlock = defaults.captureParameters();
+            WallProcessor lockProc;
+            std::vector<std::pair<juce::String, float>> expectedValues;
+            for (auto *param : lockProc.getParameters()) {
+                auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(param);
+                require(ranged != nullptr, "expected RangedAudioParameter");
+                require(!lockProc.isParamLocked(ranged->paramID), "parameter starts unlocked");
+                const float targetNorm = ranged->getDefaultValue() < 0.5f ? 1.0f : 0.0f;
+                ranged->setValueNotifyingHost(targetNorm);
+                const float lockedNorm = ranged->getValue();
+                lockProc.setParamLocked(ranged->paramID, true);
+                require(lockProc.isParamLocked(ranged->paramID), "parameter did not lock");
+                expectedValues.emplace_back(ranged->paramID, lockedNorm);
+            }
+            require(lockProc.anyParamLocked(), "anyParamLocked should be true");
+            juce::MemoryBlock lockState;
+            lockProc.getStateInformation(lockState);
+            WallProcessor recalledLock;
+            recalledLock.setStateInformation(lockState.getData(), int(lockState.getSize()));
+            recalledLock.setCurrentProgram(1);
+            recalledLock.setCurrentProgram(2);
+            recalledLock.loadParameterState(userPresetBlock, "UserLockTest");
+            for (const auto &[id, expectedNorm] : expectedValues) {
+                require(recalledLock.isParamLocked(id), "parameter lock did not survive state recall");
+                auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(recalledLock.parameters.getParameter(id));
+                require(ranged != nullptr && std::abs(ranged->getValue() - expectedNorm) < 1e-4f,
+                        "locked parameter was overwritten by preset load");
+            }
+            recalledLock.unlockAllParams();
+            require(!recalledLock.anyParamLocked(), "unlockAllParams did not clear all locks");
+            for (const auto &[id, _] : expectedValues)
+                require(!recalledLock.isParamLocked(id), "parameter remained locked after unlockAllParams");
+        }
         juce::File output =
             juce::File::getCurrentWorkingDirectory().getChildFile(argc > 1 ? argv[1] : "docs/screenshots");
         output.createDirectory();

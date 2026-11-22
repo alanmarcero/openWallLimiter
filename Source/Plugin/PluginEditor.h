@@ -64,10 +64,37 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     void describe(const char *id, const juce::String &description);
     void drawGraph(juce::Graphics &);
     void paintContent(juce::Graphics &);
+    void paintLockIndicators(juce::Graphics &);
+    void showLockMenu(const juce::String &paramID, juce::Component &target);
+    template <typename Base>
+    struct LockableControl final : Base {
+        using Base::Base;
+        std::function<void(const juce::MouseEvent &)> onPopupMenu;
+        void mouseDown(const juce::MouseEvent &e) override {
+            if (e.mods.isPopupMenu() && onPopupMenu) {
+                onPopupMenu(e);
+                return;
+            }
+            Base::mouseDown(e);
+        }
+        void mouseUp(const juce::MouseEvent &e) override {
+            if (e.mods.isPopupMenu())
+                return;
+            Base::mouseUp(e);
+        }
+    };
+    struct ChildPopupListener final : juce::MouseListener {
+        std::function<void(const juce::MouseEvent &)> onPopup;
+        void mouseDown(const juce::MouseEvent &e) override {
+            if (e.mods.isPopupMenu() && onPopup)
+                onPopup(e);
+        }
+    };
     // Holds every control at the design size. resized() scales it.
     struct Content final : juce::Component {
         explicit Content(WallEditor &owner) : editor(owner) {}
         void paint(juce::Graphics &g) override { editor.paintContent(g); }
+        void paintOverChildren(juce::Graphics &g) override { editor.paintLockIndicators(g); }
         WallEditor &editor;
     };
     WallProcessor &wallProcessor;
@@ -81,7 +108,8 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
     std::vector<std::unique_ptr<ComboAttachment>> comboAttachments;
     std::vector<std::unique_ptr<ButtonAttachment>> buttonAttachments;
-    std::array<juce::TextButton, 5> modes;
+    std::vector<std::unique_ptr<ChildPopupListener>> childPopupListeners;
+    std::array<LockableControl<juce::TextButton>, 5> modes;
     juce::ComboBox presets;
     juce::TextButton prevPreset{"Previous"}, nextPreset{"Next"};
     juce::TextButton reset{"Reset meters"}, link{"Link levels"};
@@ -99,6 +127,7 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     PeakHold inputHold{-100}, outputHold{-100}, reductionHold{0};
     bool inputClipped = false, outputClipped = false;
     int cursor = 0;
+    uint32_t lastLockMask = 0;
     double lastThreshold = 0, lastCeiling = -1;
     bool linking = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WallEditor)

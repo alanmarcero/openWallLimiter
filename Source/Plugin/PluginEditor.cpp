@@ -53,6 +53,24 @@ void box(juce::Graphics &g, juce::Rectangle<float> r) {
     g.setColour(juce::Colour(0xff283842));
     g.drawRoundedRectangle(r, 6, 1);
 }
+void drawPadlock(juce::Graphics &g, juce::Rectangle<int> bounds) {
+    const auto badge = juce::Rectangle<float>(float(bounds.getRight() - 15), float(bounds.getY() + 2), 13.f, 14.f);
+    g.setColour(ink.withAlpha(.88f));
+    g.fillRoundedRectangle(badge, 3.f);
+    g.setColour(brass.withAlpha(.5f));
+    g.drawRoundedRectangle(badge, 3.f, .8f);
+    const float cx = badge.getCentreX();
+    const float top = badge.getY() + 2.5f;
+    juce::Path shackle;
+    shackle.addArc(cx - 2.6f, top, 5.2f, 5.2f, -juce::MathConstants<float>::halfPi,
+                   juce::MathConstants<float>::halfPi, true);
+    g.setColour(brass);
+    g.strokePath(shackle, juce::PathStrokeType(1.3f));
+    const juce::Rectangle<float> body(cx - 3.5f, top + 3.8f, 7.f, 5.2f);
+    g.fillRoundedRectangle(body, 1.2f);
+    g.setColour(ink);
+    g.fillEllipse(cx - .8f, body.getCentreY() - .8f, 1.6f, 1.6f);
+}
 } // namespace
 Readout::Readout(const char *id, const juce::String &caption, float valueSize) : size(valueSize) {
     setComponentID(id);
@@ -189,7 +207,17 @@ void WallLook::drawComboBox(juce::Graphics &g, int width, int height, bool down,
 }
 void WallEditor::slider(const char *id, bool rotary) {
     auto *parameter = wallProcessor.parameters.getParameter(id);
-    auto s = std::make_unique<juce::Slider>();
+    auto s = std::make_unique<LockableControl<juce::Slider>>();
+    const juce::String paramId(id);
+    auto *raw = s.get();
+    s->onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
+    auto listener = std::make_unique<ChildPopupListener>();
+    listener->onPopup = [this, paramId, raw](const juce::MouseEvent &e) {
+        if (e.eventComponent != raw)
+            showLockMenu(paramId, *raw);
+    };
+    s->addMouseListener(listener.get(), true);
+    childPopupListeners.push_back(std::move(listener));
     s->setComponentID(id);
     s->setName(id);
     s->setTitle(parameter->getName(64));
@@ -204,7 +232,10 @@ void WallEditor::slider(const char *id, bool rotary) {
     sliders.emplace(id, std::move(s));
 }
 void WallEditor::combo(const char *id, const juce::StringArray &items) {
-    auto c = std::make_unique<juce::ComboBox>();
+    auto c = std::make_unique<LockableControl<juce::ComboBox>>();
+    const juce::String paramId(id);
+    auto *raw = c.get();
+    c->onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
     c->setComponentID(id);
     c->setTitle(wallProcessor.parameters.getParameter(id)->getName(64));
     c->addItemList(items, 1);
@@ -214,7 +245,10 @@ void WallEditor::combo(const char *id, const juce::StringArray &items) {
 }
 void WallEditor::toggle(const char *id) {
     const auto name = wallProcessor.parameters.getParameter(id)->getName(64);
-    auto b = std::make_unique<juce::TextButton>(name);
+    auto b = std::make_unique<LockableControl<juce::TextButton>>(name);
+    const juce::String paramId(id);
+    auto *raw = b.get();
+    b->onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
     b->setComponentID(id);
     b->setTitle(name);
     b->setClickingTogglesState(true);
@@ -300,6 +334,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
             m->endChangeGesture();
             timerCallback();
         };
+        modes[i].onPopupMenu = [this, i](const juce::MouseEvent &) { showLockMenu("mode", modes[i]); };
         content.addAndMakeVisible(modes[i]);
     }
     std::vector<juce::String> presetGroups;
@@ -492,6 +527,8 @@ bool WallEditor::keyPressed(const juce::KeyPress &key) {
 }
 WallEditor::~WallEditor() {
     stopTimer();
+    sliderAttachments.clear();
+    sliders.clear();
     setLookAndFeel(nullptr);
 }
 void WallEditor::timerCallback() {
@@ -634,6 +671,60 @@ void WallEditor::timerCallback() {
     content.repaint(240, 323, 640, 173);
     content.repaint(20, 10, 56, 56);
     content.repaint(24, 800, 1072, 24);
+    uint32_t lockMask = 0;
+    for (int i = 0; auto *parameter : wallProcessor.getParameters()) {
+        if (auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(parameter))
+            if (wallProcessor.isParamLocked(ranged->paramID))
+                lockMask |= (uint32_t{1} << i);
+        ++i;
+    }
+    if (lockMask != lastLockMask) {
+        lastLockMask = lockMask;
+        content.repaint();
+    }
+}
+void WallEditor::showLockMenu(const juce::String &paramID, juce::Component &target) {
+    auto *parameter = wallProcessor.parameters.getParameter(paramID);
+    const auto name = parameter != nullptr ? parameter->getName(64) : paramID;
+    const bool locked = wallProcessor.isParamLocked(paramID);
+    juce::PopupMenu menu;
+    menu.addItem(1, (locked ? "Unlock " : "Lock ") + name);
+    if (wallProcessor.anyParamLocked()) {
+        menu.addSeparator();
+        menu.addItem(2, "Unlock all parameters");
+    }
+    juce::Component::SafePointer<WallEditor> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&target),
+                       [safeThis, paramID, locked](int result) {
+                           if (safeThis == nullptr)
+                               return;
+                           if (result == 1)
+                               safeThis->wallProcessor.setParamLocked(paramID, !locked);
+                           else if (result == 2)
+                               safeThis->wallProcessor.unlockAllParams();
+                           else
+                               return;
+                           safeThis->content.repaint();
+                       });
+}
+void WallEditor::paintLockIndicators(juce::Graphics &g) {
+    if (presetBrowser && presetBrowser->isVisible())
+        g.excludeClipRegion(presetBrowser->getBounds());
+    const auto drawIfLocked = [&](const juce::String &id, const juce::Component &control) {
+        if (control.isVisible() && wallProcessor.isParamLocked(id))
+            drawPadlock(g, control.getBounds());
+    };
+    for (const auto &[id, s] : sliders)
+        drawIfLocked(id, *s);
+    for (const auto &[id, c] : combos)
+        drawIfLocked(id, *c);
+    for (const auto &[id, b] : buttons)
+        drawIfLocked(id, *b);
+    if (wallProcessor.isParamLocked("mode")) {
+        const int active = std::clamp(int(wallProcessor.parameters.getRawParameterValue("mode")->load()), 0,
+                                      int(modes.size()) - 1);
+        drawPadlock(g, modes[size_t(active)].getBounds());
+    }
 }
 void WallEditor::resized() {
     const int width = std::clamp(getWidth(), WallProcessor::minEditorWidth, WallProcessor::maxEditorWidth);

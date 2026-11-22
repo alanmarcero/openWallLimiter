@@ -59,6 +59,8 @@ WallProcessor::WallProcessor()
         const auto &id = dynamic_cast<juce::AudioProcessorParameterWithID &>(*parameter).paramID;
         const auto matches = [&](const char *session) { return id == session; };
         sessionParameter.push_back(std::ranges::any_of(sessionIds, matches));
+        paramLockIndex.emplace(id, paramLocks.size());
+        paramLocks.emplace_back(false);
     });
     // The first recorded edit after a preset load marks the label, in the same undo step as the edit.
     parameterUndo.onEdit = [this](int index) {
@@ -507,6 +509,14 @@ bool WallProcessor::loadParameterState(const juce::MemoryBlock &block, const juc
         const float current = parameters.getRawParameterValue(id)->load();
         tree.getChildWithProperty("id", id).setProperty("value", current, nullptr);
     });
+    for (auto *parameter : getParameters()) {
+        if (auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(parameter)) {
+            if (isParamLocked(ranged->paramID)) {
+                const float current = parameters.getRawParameterValue(ranged->paramID)->load();
+                tree.getChildWithProperty("id", ranged->paramID).setProperty("value", current, nullptr);
+            }
+        }
+    }
     tree.setProperty(presetNameId, name, nullptr).setProperty(presetEditedId, false, nullptr);
     restoreTree(tree, true, "Preset");
     return true;
@@ -570,6 +580,12 @@ void WallProcessor::getStateInformation(juce::MemoryBlock &dest) {
             child->setAttribute("index", i);
             child->setAttribute("data", abCompare.slot(i).toBase64Encoding());
         }
+        if (anyParamLocked()) {
+            auto *locks = xml->createNewChildElement("LOCKS");
+            for (const auto &[id, idx] : paramLockIndex)
+                if (paramLocks[idx].load(std::memory_order_acquire))
+                    locks->createNewChildElement("LOCK")->setAttribute("id", id);
+        }
         copyXmlToBinary(*xml, dest);
     }
 }
@@ -594,8 +610,15 @@ void WallProcessor::setStateInformation(const void *data, int size) {
         else
             ab1 = std::move(block);
     }
+    unlockAllParams();
+    if (auto *locks = xml->getChildByName("LOCKS")) {
+        for (int i = 0; i < locks->getNumChildElements(); ++i)
+            if (auto *entry = locks->getChildElement(i); entry != nullptr && entry->hasTagName("LOCK"))
+                setParamLocked(entry->getStringAttribute("id"), true);
+    }
     for (int i = xml->getNumChildElements() - 1; i >= 0; --i)
-        if (auto *child = xml->getChildElement(i); child != nullptr && child->hasTagName("AB"))
+        if (auto *child = xml->getChildElement(i);
+            child != nullptr && (child->hasTagName("AB") || child->hasTagName("LOCKS")))
             xml->removeChildElement(child, true);
     restoreTree(juce::ValueTree::fromXml(*xml), false, {});
     std::ranges::for_each(undoManagers, [](juce::UndoManager &history) { history.clearUndoHistory(); });
@@ -829,6 +852,22 @@ const std::vector<WallPreset> &WallProcessor::factoryPresets() {
     return list;
 }
 
+bool WallProcessor::isParamLocked(const juce::String &paramID) const noexcept {
+    const auto it = paramLockIndex.find(paramID);
+    return it != paramLockIndex.end() && paramLocks[it->second].load(std::memory_order_acquire);
+}
+void WallProcessor::setParamLocked(const juce::String &paramID, bool locked) {
+    if (const auto it = paramLockIndex.find(paramID); it != paramLockIndex.end())
+        paramLocks[it->second].store(locked, std::memory_order_release);
+}
+void WallProcessor::unlockAllParams() {
+    for (auto &flag : paramLocks)
+        flag.store(false, std::memory_order_release);
+}
+bool WallProcessor::anyParamLocked() const noexcept {
+    return std::ranges::any_of(paramLocks,
+                               [](const std::atomic<bool> &flag) { return flag.load(std::memory_order_acquire); });
+}
 void WallProcessor::setCurrentProgram(int index) {
     if (index < 0 || index >= getNumPrograms() || index == currentProgram)
         return;
@@ -849,11 +888,16 @@ void WallProcessor::applyPreset(int index) {
     std::ranges::for_each(getParameters(), [this](juce::AudioProcessorParameter *parameter) {
         if (sessionParameter[size_t(parameter->getParameterIndex())])
             return;
+        if (auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(parameter))
+            if (isParamLocked(ranged->paramID))
+                return;
         parameter->beginChangeGesture();
         parameter->setValueNotifyingHost(parameter->getDefaultValue());
         parameter->endChangeGesture();
     });
     std::ranges::for_each(presets[static_cast<size_t>(index)].overrides, [this](const auto &entry) {
+        if (isParamLocked(entry.first))
+            return;
         auto *parameter = parameters.getParameter(entry.first);
         if (parameter == nullptr)
             return;

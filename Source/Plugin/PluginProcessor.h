@@ -9,8 +9,10 @@
 #include "suite/ParameterUndo.h"
 #include <array>
 #include <atomic>
+#include <deque>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -63,6 +65,10 @@ class WallProcessor final : public juce::AudioProcessor {
     bool canUndo() const { return undoManagers[size_t(abCompare.active())].canUndo(); }
     bool canRedo() const { return undoManagers[size_t(abCompare.active())].canRedo(); }
     void matchLoudnessTarget();
+    bool isParamLocked(const juce::String &paramID) const noexcept;
+    void setParamLocked(const juce::String &paramID, bool locked);
+    void unlockAllParams();
+    bool anyParamLocked() const noexcept;
     int storedEditorWidth() const noexcept { return editorWidth; }
     int storedEditorHeight() const noexcept { return editorHeight; }
     void setStoredEditorSize(int width, int height);
@@ -135,6 +141,8 @@ class WallProcessor final : public juce::AudioProcessor {
     uint32_t randomState = 0x91a5c3u;
     suite::ABCompare abCompare;
     std::vector<bool> sessionParameter;
+    std::map<juce::String, size_t> paramLockIndex;
+    std::deque<std::atomic<bool>> paramLocks;
     int editorWidth = defaultEditorWidth, editorHeight = defaultEditorHeight, currentProgram = 0;
     float randomUnit() noexcept;
     juce::ValueTree sanitizeTree(juce::ValueTree);
