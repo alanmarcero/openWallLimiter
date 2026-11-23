@@ -22,11 +22,11 @@ class PresetLibrary {
     bool remove(const juce::String &name);
     void setFavorite(const juce::String &name, bool favorite);
     bool isFactory(const juce::String &name) const;
+    juce::String sanitize(const juce::String &name) const;
     std::vector<PresetEntry> entries(const juce::String &search) const;
     juce::MemoryBlock loadUser(const juce::String &name) const;
 
   private:
-    juce::String sanitize(const juce::String &name) const;
     juce::File fileFor(const juce::String &name) const;
     juce::File favoritesFile() const;
     juce::StringArray readFavorites() const;

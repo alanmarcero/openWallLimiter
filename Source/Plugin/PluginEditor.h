@@ -23,6 +23,7 @@ class Readout final : public juce::Component, public juce::SettableTooltipClient
     std::function<void()> onClick;
     void show(const juce::String &shown, juce::Colour shownColour, juce::Colour shownLed = {});
     void paint(juce::Graphics &) override;
+    void mouseEnter(const juce::MouseEvent &) override;
     void mouseUp(const juce::MouseEvent &) override;
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
@@ -66,28 +67,61 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     void paintContent(juce::Graphics &);
     void paintLockIndicators(juce::Graphics &);
     void showLockMenu(const juce::String &paramID, juce::Component &target);
+    void stepPreset(int delta);
+    void updateLockAccessibility();
+    juce::Rectangle<int> padlockBoundsFor(const juce::String &id, const juce::Component &control) const;
+    template <typename Control>
+    void bindLockHandlers(Control &control, const juce::String &paramId) {
+        auto *raw = &control;
+        control.onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
+        control.onBadgeClick = [this, paramId, raw](const juce::MouseEvent &e) {
+            if (!wallProcessor.isParamLocked(paramId))
+                return false;
+            const auto pos = content.getLocalPoint(e.eventComponent, e.getPosition());
+            if (!padlockBoundsFor(paramId, *raw).expanded(2).contains(pos))
+                return false;
+            showLockMenu(paramId, *raw);
+            return true;
+        };
+    }
     template <typename Base>
     struct LockableControl final : Base {
         using Base::Base;
         std::function<void(const juce::MouseEvent &)> onPopupMenu;
+        std::function<bool(const juce::MouseEvent &)> onBadgeClick;
+        bool badgePressed = false;
         void mouseDown(const juce::MouseEvent &e) override {
             if (e.mods.isPopupMenu() && onPopupMenu) {
                 onPopupMenu(e);
                 return;
             }
+            if (e.mods.isLeftButtonDown() && onBadgeClick && onBadgeClick(e)) {
+                badgePressed = true;
+                return;
+            }
+            badgePressed = false;
             Base::mouseDown(e);
         }
         void mouseUp(const juce::MouseEvent &e) override {
             if (e.mods.isPopupMenu())
                 return;
+            if (badgePressed) {
+                badgePressed = false;
+                return;
+            }
             Base::mouseUp(e);
         }
     };
     struct ChildPopupListener final : juce::MouseListener {
         std::function<void(const juce::MouseEvent &)> onPopup;
+        std::function<bool(const juce::MouseEvent &)> onBadgeClick;
         void mouseDown(const juce::MouseEvent &e) override {
-            if (e.mods.isPopupMenu() && onPopup)
+            if (e.mods.isPopupMenu() && onPopup) {
                 onPopup(e);
+                return;
+            }
+            if (e.mods.isLeftButtonDown() && onBadgeClick)
+                onBadgeClick(e);
         }
     };
     // Holds every control at the design size. resized() scales it.
@@ -111,7 +145,7 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     std::vector<std::unique_ptr<ChildPopupListener>> childPopupListeners;
     std::array<LockableControl<juce::TextButton>, 5> modes;
     juce::ComboBox presets;
-    juce::TextButton prevPreset{"Previous"}, nextPreset{"Next"};
+    juce::TextButton prevPreset{"<"}, nextPreset{">"};
     juce::TextButton reset{"Reset meters"}, link{"Link levels"};
     juce::TextButton undoButton{"Undo"}, redoButton{"Redo"};
     juce::TextButton abA{"A"}, abB{"B"}, abAToB{"A>B"}, abBToA{"B>A"};
@@ -128,6 +162,10 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     bool inputClipped = false, outputClipped = false;
     int cursor = 0;
     uint32_t lastLockMask = 0;
+    float lastArtworkPhase = -1.f;
+    int lastEffectiveFactor = -1;
+    int lastLatencySamples = -1;
+    double lastSampleRate = 0.0;
     double lastThreshold = 0, lastCeiling = -1;
     bool linking = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WallEditor)

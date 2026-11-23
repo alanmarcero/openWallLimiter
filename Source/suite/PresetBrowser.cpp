@@ -18,12 +18,24 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
     search.setComponentID("preset_search");
     search.setTitle("Search presets");
     search.onTextChange = [this] { refresh(); };
+    search.onEscapeKey = [this] {
+        if (onClose)
+            onClose();
+    };
     addAndMakeVisible(search);
     styleField(nameBox);
     nameBox.setTextToShowWhenEmpty("Preset name", muted);
     nameBox.setComponentID("preset_name");
     nameBox.setTitle("Preset name");
-    nameBox.onTextChange = [this] { disarm(); };
+    nameBox.onTextChange = [this] {
+        disarm();
+        updateButtons();
+    };
+    nameBox.onReturnKey = [this] { save.triggerClick(); };
+    nameBox.onEscapeKey = [this] {
+        if (onClose)
+            onClose();
+    };
     addAndMakeVisible(nameBox);
     list.setModel(this);
     list.setComponentID("preset_list");
@@ -45,9 +57,11 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
         if (!capture)
             return;
         const auto label = nameBox.getText().trim();
-        const auto name = label.isEmpty() ? juce::String("User preset") : label;
+        const auto clean = library.sanitize(label);
+        if (clean.isEmpty() || library.isFactory(label) || library.isFactory(clean))
+            return;
         // Replacing a saved preset takes a second click within three seconds.
-        if (armed != &save && library.loadUser(name).getSize() > 0) {
+        if (armed != &save && library.loadUser(clean).getSize() > 0) {
             disarm();
             armed = &save;
             save.setButtonText("Replace?");
@@ -56,10 +70,10 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
             return;
         }
         disarm();
-        if (library.save(name, capture())) {
+        if (library.save(clean, capture())) {
             hint.setText("Saved", juce::dontSendNotification);
             if (onSaved)
-                onSaved(name);
+                onSaved(clean);
             refresh();
         } else {
             hint.setText("Factory presets stay read-only", juce::dontSendNotification);
@@ -68,8 +82,11 @@ PresetBrowser::PresetBrowser(PresetLibrary &libraryIn) : library(libraryIn) {
     renameButton.onClick = [this] {
         if (selected < 0 || selected >= rowCount())
             return;
-        if (library.rename(shown[size_t(selected)].name, nameBox.getText())) {
+        const auto clean = library.sanitize(nameBox.getText());
+        if (library.rename(shown[size_t(selected)].name, clean)) {
             hint.setText("Renamed", juce::dontSendNotification);
+            if (onRenamed)
+                onRenamed(clean);
             refresh();
         } else {
             hint.setText("Factory presets stay read-only", juce::dontSendNotification);
@@ -113,8 +130,11 @@ void PresetBrowser::setSearchText(const juce::String &text) {
     refresh();
 }
 void PresetBrowser::refresh() {
+    disarm();
     const juce::ScopedValueSetter<bool> guard(suppressLoad, true);
-    const auto keep = selected >= 0 && selected < rowCount() ? shown[size_t(selected)].name : juce::String();
+    const auto keep = activePreset ? activePreset()
+                                   : (selected >= 0 && selected < rowCount() ? shown[size_t(selected)].name
+                                                                             : juce::String());
     shown = library.entries(search.getText());
     list.updateContent();
     selected = -1;
@@ -129,12 +149,16 @@ void PresetBrowser::refresh() {
     repaint();
 }
 void PresetBrowser::updateButtons() {
+    const auto typed = nameBox.getText().trim();
+    const auto clean = library.sanitize(typed);
+    const bool validName = clean.isNotEmpty() && !library.isFactory(typed) && !library.isFactory(clean);
     const bool user = selected >= 0 && selected < rowCount() && !shown[size_t(selected)].factory;
-    renameButton.setEnabled(user);
+    save.setEnabled(validName);
+    renameButton.setEnabled(user && validName);
     removeButton.setEnabled(user);
     favoriteButton.setEnabled(selected >= 0 && selected < rowCount());
     if (selected >= 0 && selected < rowCount())
-        favoriteButton.setButtonText(shown[size_t(selected)].favorite ? "Unfavourite" : "Favorite");
+        favoriteButton.setButtonText(shown[size_t(selected)].favorite ? "Unfavorite" : "Favorite");
     else
         favoriteButton.setButtonText("Favorite");
     favoriteButton.setTitle(favoriteButton.getButtonText());
@@ -143,7 +167,8 @@ void PresetBrowser::loadRow(int row) {
     if (suppressLoad || row < 0 || row >= rowCount())
         return;
     const auto &entry = shown[size_t(row)];
-    nameBox.setText(entry.name, juce::dontSendNotification);
+    if (!entry.factory)
+        nameBox.setText(entry.name, juce::dontSendNotification);
     if (entry.factory) {
         if (onFactory)
             onFactory(entry.factoryIndex);
@@ -161,11 +186,35 @@ void PresetBrowser::disarm() {
     removeButton.setButtonText("Delete");
     removeButton.setTitle("Delete");
 }
+void PresetBrowser::listBoxItemClicked(int row, const juce::MouseEvent &e) {
+    if (e.x >= 28 || row < 0 || row >= rowCount())
+        return;
+    const auto &entry = shown[size_t(row)];
+    library.setFavorite(entry.name, !entry.favorite);
+    refresh();
+}
 void PresetBrowser::selectedRowsChanged(int row) {
+    if (juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown() && list.isMouseOver(true)
+        && list.getMouseXYRelative().x < 28) {
+        const juce::ScopedValueSetter<bool> guard(suppressLoad, true);
+        if (selected >= 0 && selected < rowCount())
+            list.selectRow(selected, false, true);
+        else
+            list.deselectAllRows();
+        return;
+    }
     disarm();
     selected = row;
     updateButtons();
     loadRow(row);
+}
+void PresetBrowser::visibilityChanged() { disarm(); }
+bool PresetBrowser::keyPressed(const juce::KeyPress &key) {
+    if (key == juce::KeyPress::escapeKey && onClose) {
+        onClose();
+        return true;
+    }
+    return false;
 }
 void PresetBrowser::paintListBoxItem(int row, juce::Graphics &g, int width, int height, bool isSelected) {
     if (row < 0 || row >= rowCount())

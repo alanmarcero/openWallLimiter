@@ -53,8 +53,17 @@ void box(juce::Graphics &g, juce::Rectangle<float> r) {
     g.setColour(juce::Colour(0xff283842));
     g.drawRoundedRectangle(r, 6, 1);
 }
-void drawPadlock(juce::Graphics &g, juce::Rectangle<int> bounds) {
-    const auto badge = juce::Rectangle<float>(float(bounds.getRight() - 15), float(bounds.getY() + 2), 13.f, 14.f);
+void drawFocusRing(juce::Graphics &g, juce::Rectangle<float> bounds) {
+    g.setColour(paper);
+    g.drawRoundedRectangle(bounds.reduced(1.f), 4.f, 1.f);
+}
+juce::String withLockSuffix(juce::String text, bool locked) {
+    constexpr auto suffix = " (Locked)";
+    if (text.endsWith(suffix))
+        text = text.dropLastCharacters(9);
+    return locked ? text + suffix : text;
+}
+void drawPadlock(juce::Graphics &g, juce::Rectangle<float> badge) {
     g.setColour(ink.withAlpha(.88f));
     g.fillRoundedRectangle(badge, 3.f);
     g.setColour(brass.withAlpha(.5f));
@@ -89,6 +98,9 @@ void Readout::paint(juce::Graphics &g) {
     text(g, value, getLocalBounds().withTrimmedTop(21), size, colour);
     g.setColour(led);
     g.fillEllipse(float(getWidth()) - 14.f, 27.f, 8.f, 8.f);
+}
+void Readout::mouseEnter(const juce::MouseEvent &) {
+    setMouseCursor(onClick != nullptr ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
 }
 void Readout::mouseUp(const juce::MouseEvent &e) {
     if (onClick != nullptr && contains(e.getPosition()))
@@ -171,7 +183,7 @@ void WallLook::drawRotarySlider(juce::Graphics &g, int x, int y, int w, int h, f
     g.setColour(paper);
     g.drawLine({a, b}, 2.5f);
     if (slider.hasKeyboardFocus(false))
-        g.drawRoundedRectangle(slider.getLocalBounds().toFloat().reduced(1), 4, 1);
+        drawFocusRing(g, juce::Rectangle<float>(float(x), float(y), float(w), float(h)));
 }
 void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, float position, float, float,
                                 juce::Slider::SliderStyle style, juce::Slider &slider) {
@@ -195,26 +207,29 @@ void WallLook::drawLinearSlider(juce::Graphics &g, int x, int y, int w, int h, f
         g.fillRoundedRectangle(float(x), cy - 2, position - float(x), 4, 2);
         g.fillEllipse(position - 6, cy - 6, 12, 12);
     }
-    if (slider.hasKeyboardFocus(false)) {
-        g.setColour(paper);
-        g.drawRoundedRectangle(slider.getLocalBounds().toFloat().reduced(1), 4, 1);
-    }
+    if (slider.hasKeyboardFocus(false))
+        drawFocusRing(g, juce::Rectangle<float>(float(x), float(y), float(w), float(h)));
 }
 void WallLook::drawComboBox(juce::Graphics &g, int width, int height, bool down, int buttonX, int buttonY,
                             int buttonW, int buttonH, juce::ComboBox &box) {
     const DimWhenDisabled dimmed(g, box);
     juce::LookAndFeel_V4::drawComboBox(g, width, height, down, buttonX, buttonY, buttonW, buttonH, box);
+    if (box.hasKeyboardFocus(true))
+        drawFocusRing(g, juce::Rectangle<float>(0.f, 0.f, float(width), float(height)));
 }
 void WallEditor::slider(const char *id, bool rotary) {
     auto *parameter = wallProcessor.parameters.getParameter(id);
     auto s = std::make_unique<LockableControl<juce::Slider>>();
     const juce::String paramId(id);
     auto *raw = s.get();
-    s->onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
+    bindLockHandlers(*s, paramId);
     auto listener = std::make_unique<ChildPopupListener>();
     listener->onPopup = [this, paramId, raw](const juce::MouseEvent &e) {
         if (e.eventComponent != raw)
             showLockMenu(paramId, *raw);
+    };
+    listener->onBadgeClick = [raw](const juce::MouseEvent &e) {
+        return e.eventComponent != raw && raw->onBadgeClick && raw->onBadgeClick(e);
     };
     s->addMouseListener(listener.get(), true);
     childPopupListeners.push_back(std::move(listener));
@@ -222,20 +237,18 @@ void WallEditor::slider(const char *id, bool rotary) {
     s->setName(id);
     s->setTitle(parameter->getName(64));
     s->setWantsKeyboardFocus(true);
+    content.addAndMakeVisible(*s);
     s->setSliderStyle(rotary ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearVertical);
     s->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 96, 25);
     s->setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
     // Shift-drag uses JUCE's velocity mode as a fine drag, about one fifth of the normal speed.
     s->setVelocityModeParameters(1.0, 1, .05, true, juce::ModifierKeys::shiftModifier);
-    content.addAndMakeVisible(*s);
     sliderAttachments.push_back(std::make_unique<SliderAttachment>(wallProcessor.parameters, id, *s));
     sliders.emplace(id, std::move(s));
 }
 void WallEditor::combo(const char *id, const juce::StringArray &items) {
     auto c = std::make_unique<LockableControl<juce::ComboBox>>();
-    const juce::String paramId(id);
-    auto *raw = c.get();
-    c->onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
+    bindLockHandlers(*c, id);
     c->setComponentID(id);
     c->setTitle(wallProcessor.parameters.getParameter(id)->getName(64));
     c->addItemList(items, 1);
@@ -246,9 +259,7 @@ void WallEditor::combo(const char *id, const juce::StringArray &items) {
 void WallEditor::toggle(const char *id) {
     const auto name = wallProcessor.parameters.getParameter(id)->getName(64);
     auto b = std::make_unique<LockableControl<juce::TextButton>>(name);
-    const juce::String paramId(id);
-    auto *raw = b.get();
-    b->onPopupMenu = [this, paramId, raw](const juce::MouseEvent &) { showLockMenu(paramId, *raw); };
+    bindLockHandlers(*b, id);
     b->setComponentID(id);
     b->setTitle(name);
     b->setClickingTogglesState(true);
@@ -259,8 +270,9 @@ void WallEditor::toggle(const char *id) {
 void WallEditor::describe(const char *id, const juce::String &description) {
     auto *parameter = wallProcessor.parameters.getParameter(id);
     const auto range = parameter->getText(0.f, 0) + " to " + parameter->getText(1.f, 0);
-    const auto tip = parameter->getName(64) + ": " + range + ". " + description
-                   + " Shift-drag for fine steps, double-click to reset, or type a value.";
+    const auto tip = withLockSuffix(parameter->getName(64) + ": " + range + ". " + description
+                                        + " Shift-drag for fine steps, double-click to reset, or type a value.",
+                                    wallProcessor.isParamLocked(id));
     auto &target = *sliders.at(id);
     if (target.getTooltip() == tip)
         return;
@@ -294,8 +306,10 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     slider("tone_tilt", true);
     slider("highpass_hz", false);
     slider("lowpass_hz", false);
-    for (auto id : {"highpass_hz", "lowpass_hz"})
+    for (auto id : {"highpass_hz", "lowpass_hz"}) {
         sliders[id]->setSliderStyle(juce::Slider::LinearHorizontal);
+        sliders[id]->setTextBoxStyle(juce::Slider::TextBoxRight, false, 68, 22);
+    }
     // A UI-only skew puts -3 dB at the middle of the Ceiling travel. The parameter range stays linear.
     juce::NormalisableRange<double> ceilingTravel(-30.0, 0.0, 0.01);
     ceilingTravel.setSkewForCentre(-3.0);
@@ -334,7 +348,7 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
             m->endChangeGesture();
             timerCallback();
         };
-        modes[i].onPopupMenu = [this, i](const juce::MouseEvent &) { showLockMenu("mode", modes[i]); };
+        bindLockHandlers(modes[i], "mode");
         content.addAndMakeVisible(modes[i]);
     }
     std::vector<juce::String> presetGroups;
@@ -358,22 +372,23 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     presets.setComponentID("presets");
     presets.setTitle("Preset");
     presets.setTooltip("Choose a factory limiter preset. These 48 presets are also host programs. Use Library for saved presets.");
-    presets.onChange = [this] { wallProcessor.applyPreset(presets.getSelectedItemIndex()); };
+    presets.onChange = [this] {
+        wallProcessor.applyPreset(presets.getSelectedItemIndex());
+        if (presetBrowser && presetBrowser->isVisible())
+            presetBrowser->refresh();
+        else if (presetBrowser)
+            presetBrowser->disarm();
+    };
     content.addAndMakeVisible(presets);
     prevPreset.setComponentID("prev_preset");
     prevPreset.setTitle("Previous preset");
     prevPreset.setTooltip("Previous preset");
-    prevPreset.onClick = [this] {
-        const int count = wallProcessor.getNumPrograms();
-        wallProcessor.applyPreset((wallProcessor.getCurrentProgram() + count - 1) % count);
-    };
+    prevPreset.onClick = [this] { stepPreset(-1); };
     content.addAndMakeVisible(prevPreset);
     nextPreset.setComponentID("next_preset");
     nextPreset.setTitle("Next preset");
     nextPreset.setTooltip("Next preset");
-    nextPreset.onClick = [this] {
-        wallProcessor.applyPreset((wallProcessor.getCurrentProgram() + 1) % wallProcessor.getNumPrograms());
-    };
+    nextPreset.onClick = [this] { stepPreset(1); };
     content.addAndMakeVisible(nextPreset);
     reset.setComponentID("reset_meters");
     reset.setTitle("Reset meters");
@@ -427,16 +442,30 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     libraryButton.setClickingTogglesState(true);
     undoButton.onClick = [this] { wallProcessor.undo(); };
     redoButton.onClick = [this] { wallProcessor.redo(); };
-    abA.onClick = [this] {
+    const auto syncBrowserOnAB = [this] {
+        if (presetBrowser && presetBrowser->isVisible())
+            presetBrowser->refresh();
+        else if (presetBrowser)
+            presetBrowser->disarm();
+    };
+    abA.onClick = [this, syncBrowserOnAB] {
         if (wallProcessor.activeAB() != 0)
             wallProcessor.toggleAB();
+        syncBrowserOnAB();
     };
-    abB.onClick = [this] {
+    abB.onClick = [this, syncBrowserOnAB] {
         if (wallProcessor.activeAB() != 1)
             wallProcessor.toggleAB();
+        syncBrowserOnAB();
     };
-    abAToB.onClick = [this] { wallProcessor.copyAB(0, 1); };
-    abBToA.onClick = [this] { wallProcessor.copyAB(1, 0); };
+    abAToB.onClick = [this, syncBrowserOnAB] {
+        wallProcessor.copyAB(0, 1);
+        syncBrowserOnAB();
+    };
+    abBToA.onClick = [this, syncBrowserOnAB] {
+        wallProcessor.copyAB(1, 0);
+        syncBrowserOnAB();
+    };
     for (auto *button : {&undoButton, &redoButton, &abA, &abB, &abAToB, &abBToA, &libraryButton})
         content.addAndMakeVisible(button);
     juce::StringArray factoryNames;
@@ -450,6 +479,12 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
         wallProcessor.loadParameterState(block, name);
     };
     presetBrowser->onSaved = [this](const juce::String &name) { wallProcessor.markPresetSaved(name); };
+    presetBrowser->onRenamed = [this](const juce::String &name) { wallProcessor.markPresetSaved(name); };
+    presetBrowser->activePreset = [this] {
+        auto name = wallProcessor.presetLabel();
+        return name.endsWith(" *") ? name.dropLastCharacters(2) : name;
+    };
+    presetBrowser->onClose = [this] { libraryButton.setToggleState(false, juce::sendNotificationSync); };
     presetBrowser->capture = [this] { return wallProcessor.captureParameters(); };
     content.addChildComponent(*presetBrowser);
     const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
@@ -460,14 +495,17 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     truePeak.setTooltip("Highest true peak since the last reset. "
                         "The dot turns amber above the Ceiling and red above 0 dBTP. Click to reset it.");
     truePeak.onClick = [this] { wallProcessor.resetTruePeak(); };
+    truePeak.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     inputLevel.setTooltip("Highest input peak in the last second. "
                           "The dot stays red after a peak above 0 dBFS. Click to clear it.");
     outputLevel.setTooltip("Highest output peak in the last second. "
                            "The dot stays red after a peak above 0 dBFS. Click to clear it.");
     inputLevel.onClick = [this] { inputClipped = false; };
     outputLevel.onClick = [this] { outputClipped = false; };
+    inputLevel.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    outputLevel.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     monitoring.setComponentID("monitoring_banner");
-    monitoring.setFont(font(12, true));
+    monitoring.setFont(font(11.5f, true));
     monitoring.setColour(juce::Label::backgroundColourId, red);
     monitoring.setColour(juce::Label::textColourId, ink);
     monitoring.setJustificationType(juce::Justification::centred);
@@ -496,11 +534,11 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
                 lastThreshold = now;
             else
                 lastCeiling = now;
-            if (link.getToggleState() && !linking && sliders[id]->isMouseButtonDown()) {
+            const char *otherId = threshold ? "ceiling" : "threshold";
+            if (link.getToggleState() && !linking && sliders[id]->isMouseButtonDown()
+                && !wallProcessor.isParamLocked(otherId)) {
                 linking = true;
-                sliders[threshold ? "ceiling" : "threshold"]->setValue(
-                    sliders[threshold ? "ceiling" : "threshold"]->getValue() + difference,
-                    juce::sendNotificationSync);
+                sliders[otherId]->setValue(sliders[otherId]->getValue() + difference, juce::sendNotificationSync);
                 linking = false;
             }
         };
@@ -510,12 +548,20 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     setResizeLimits(WallProcessor::minEditorWidth, WallProcessor::minEditorHeight, WallProcessor::maxEditorWidth,
                     WallProcessor::maxEditorHeight);
     setSize(width, height);
+    updateLockAccessibility();
     timerCallback();
     startTimerHz(refreshHz);
 }
 bool WallEditor::keyPressed(const juce::KeyPress &key) {
+    if (key == juce::KeyPress::escapeKey && presetBrowser && presetBrowser->isVisible()) {
+        libraryButton.setToggleState(false, juce::sendNotificationSync);
+        return true;
+    }
+    if (dynamic_cast<juce::TextEditor *>(juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+        return false;
     const auto command = juce::ModifierKeys::commandModifier;
-    if (key == juce::KeyPress('z', command | juce::ModifierKeys::shiftModifier, 0)) {
+    if (key == juce::KeyPress('z', command | juce::ModifierKeys::shiftModifier, 0)
+        || key == juce::KeyPress('y', command, 0)) {
         wallProcessor.redo();
         return true;
     }
@@ -574,11 +620,12 @@ void WallEditor::timerCallback() {
     std::ranges::for_each(std::views::iota(size_t{0}, modes.size()), [&](size_t i) {
         const auto &each = wall::modeProfiles[i];
         const auto share = juce::String(juce::roundToInt(each.attackRatio * 100.0)) + "% of Lookahead";
-        modes[i].setTooltip(juce::String(modeCharacters[i]) + " Attack "
-                            + wall::milliseconds(float(each.attackRatio) * lookahead) + " (" + share
-                            + "), hold " + wall::milliseconds(float(each.hold)) + ", recovery "
-                            + wall::milliseconds(float(each.fast) * release) + " to "
-                            + wall::milliseconds(float(each.slow) * release) + ".");
+        modes[i].setTooltip(withLockSuffix(juce::String(modeCharacters[i]) + " Attack "
+                                               + wall::milliseconds(float(each.attackRatio) * lookahead) + " (" + share
+                                               + "), hold " + wall::milliseconds(float(each.hold)) + ", recovery "
+                                               + wall::milliseconds(float(each.fast) * release) + " to "
+                                               + wall::milliseconds(float(each.slow) * release) + ".",
+                                           wallProcessor.isParamLocked("mode")));
     });
 
     undoButton.setEnabled(wallProcessor.canUndo());
@@ -637,8 +684,12 @@ void WallEditor::timerCallback() {
     const juce::String needsStereo = mono ? " Works on stereo tracks only." : "";
     describe("highpass_hz", "Sets the high pass cutoff before the limiter." + needsHighpass);
     describe("lowpass_hz", "Sets the low pass cutoff before the limiter." + needsLowpass);
-    combos["highpass_slope"]->setTooltip("Sets the high pass slope, 12 to 96 dB per octave." + needsHighpass);
-    combos["lowpass_slope"]->setTooltip("Sets the low pass slope, 12 to 96 dB per octave." + needsLowpass);
+    combos["highpass_slope"]->setTooltip(withLockSuffix(
+        "Sets the high pass slope, 12 to 96 dB per octave." + needsHighpass,
+        wallProcessor.isParamLocked("highpass_slope")));
+    combos["lowpass_slope"]->setTooltip(withLockSuffix(
+        "Sets the low pass slope, 12 to 96 dB per octave." + needsLowpass,
+        wallProcessor.isParamLocked("lowpass_slope")));
     describe("stereo_link",
              "Shares peak detection above 120 Hz between the channels. Bass below 120 Hz is always linked."
                  + needsStereo);
@@ -654,23 +705,38 @@ void WallEditor::timerCallback() {
     if (safe)
         clipNote = "No effect in Safe. Choose another style to use it.";
     describe("clip", clipNote);
-    oversampling.setTooltip("Runs the limiter at a higher rate. True peak uses at least 4x."
-                            + juce::String(forced ? " Turn off True peak to use Off or 2x." : ""));
-    // The closed combo box shows the rate that runs. Its popup still lists the saved choices.
-    auto shown = oversampling.getItemText(rate);
-    if (forced)
-        shown = "4x (True peak)";
-    std::ranges::for_each(oversampling.getChildren(), [&](juce::Component *child) {
-        if (auto *label = dynamic_cast<juce::Label *>(child))
-            label->setText(shown, juce::dontSendNotification);
-    });
+    oversampling.setTooltip(withLockSuffix("Runs the limiter at a higher rate. True peak uses at least 4x."
+                                               + juce::String(forced ? " Turn off True peak to use Off or 2x." : ""),
+                                           wallProcessor.isParamLocked("oversampling")));
+    // Keep the ComboBox item ID matched to the saved choice so the popup menu retains its tick mark.
+    static constexpr std::array<const char *, 2> baseRates{"Off", "2x"};
+    for (int i = 0; i < 2; ++i) {
+        const juce::String target = (forced && i == rate) ? "4x (True peak)" : baseRates[size_t(i)];
+        if (oversampling.getItemText(i) != target)
+            oversampling.changeItemText(i + 1, target);
+    }
+    const auto shown = oversampling.getItemText(rate);
+    if (oversampling.getText() != shown)
+        oversampling.setText(shown, juce::dontSendNotification);
     // A label that matches no menu item clears the selection, so picking that preset again reloads it.
     const auto label = wallProcessor.presetLabel();
     if (!presets.isPopupActive() && presets.getText() != label)
         presets.setText(label, juce::dontSendNotification);
     content.repaint(240, 323, 640, 173);
-    content.repaint(20, 10, 56, 56);
-    content.repaint(24, 800, 1072, 24);
+    const float phase = wallProcessor.artworkPhase();
+    if (std::abs(phase - lastArtworkPhase) > 1e-4f) {
+        lastArtworkPhase = phase;
+        content.repaint(20, 10, 56, 56);
+    }
+    const int factor = wallProcessor.effectiveFactor.load();
+    const int latency = wallProcessor.getLatencySamples();
+    const double sampleRate = wallProcessor.preparedSampleRate();
+    if (factor != lastEffectiveFactor || latency != lastLatencySamples || std::abs(sampleRate - lastSampleRate) > 1e-6) {
+        lastEffectiveFactor = factor;
+        lastLatencySamples = latency;
+        lastSampleRate = sampleRate;
+        content.repaint(24, 800, 1072, 24);
+    }
     uint32_t lockMask = 0;
     for (int i = 0; auto *parameter : wallProcessor.getParameters()) {
         if (auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(parameter))
@@ -680,8 +746,64 @@ void WallEditor::timerCallback() {
     }
     if (lockMask != lastLockMask) {
         lastLockMask = lockMask;
+        updateLockAccessibility();
         content.repaint();
     }
+}
+void WallEditor::stepPreset(int delta) {
+    if (!presetLibrary)
+        return;
+    const auto entries = presetLibrary->entries("");
+    if (entries.empty())
+        return;
+    auto current = wallProcessor.presetLabel();
+    if (current.endsWith(" *"))
+        current = current.dropLastCharacters(2);
+    int index = -1;
+    for (int i = 0; i < int(entries.size()); ++i) {
+        if (entries[size_t(i)].name == current) {
+            index = i;
+            break;
+        }
+    }
+    const int count = int(entries.size());
+    const int next = index < 0 ? (delta > 0 ? 0 : count - 1) : (index + delta + count) % count;
+    const auto &target = entries[size_t(next)];
+    if (target.factory) {
+        wallProcessor.applyPreset(target.factoryIndex);
+    } else {
+        const auto block = presetLibrary->loadUser(target.name);
+        if (block.getSize() > 0)
+            wallProcessor.loadParameterState(block, target.name);
+    }
+    if (presetBrowser && presetBrowser->isVisible())
+        presetBrowser->refresh();
+    else if (presetBrowser)
+        presetBrowser->disarm();
+}
+void WallEditor::updateLockAccessibility() {
+    const auto update = [&](const juce::String &id, juce::Component &control) {
+        const bool locked = wallProcessor.isParamLocked(id);
+        control.setTitle(withLockSuffix(control.getTitle(), locked));
+        if (auto *tipClient = dynamic_cast<juce::SettableTooltipClient *>(&control))
+            tipClient->setTooltip(withLockSuffix(tipClient->getTooltip(), locked));
+    };
+    for (const auto &[id, s] : sliders)
+        update(id, *s);
+    for (const auto &[id, c] : combos)
+        update(id, *c);
+    for (const auto &[id, b] : buttons)
+        update(id, *b);
+    for (auto &modeButton : modes)
+        update("mode", modeButton);
+}
+juce::Rectangle<int> WallEditor::padlockBoundsFor(const juce::String &id, const juce::Component &control) const {
+    const auto bounds = control.getBounds();
+    if (id == "ceiling")
+        return {bounds.getX() + 2, bounds.getY() + 2, 13, 14};
+    if (combos.contains(id))
+        return {bounds.getRight() - 37, bounds.getY() + 2, 13, 14};
+    return {bounds.getRight() - 15, bounds.getY() + 2, 13, 14};
 }
 void WallEditor::showLockMenu(const juce::String &paramID, juce::Component &target) {
     auto *parameter = wallProcessor.parameters.getParameter(paramID);
@@ -704,6 +826,7 @@ void WallEditor::showLockMenu(const juce::String &paramID, juce::Component &targ
                                safeThis->wallProcessor.unlockAllParams();
                            else
                                return;
+                           safeThis->updateLockAccessibility();
                            safeThis->content.repaint();
                        });
 }
@@ -712,7 +835,7 @@ void WallEditor::paintLockIndicators(juce::Graphics &g) {
         g.excludeClipRegion(presetBrowser->getBounds());
     const auto drawIfLocked = [&](const juce::String &id, const juce::Component &control) {
         if (control.isVisible() && wallProcessor.isParamLocked(id))
-            drawPadlock(g, control.getBounds());
+            drawPadlock(g, padlockBoundsFor(id, control).toFloat());
     };
     for (const auto &[id, s] : sliders)
         drawIfLocked(id, *s);
@@ -723,7 +846,7 @@ void WallEditor::paintLockIndicators(juce::Graphics &g) {
     if (wallProcessor.isParamLocked("mode")) {
         const int active = std::clamp(int(wallProcessor.parameters.getRawParameterValue("mode")->load()), 0,
                                       int(modes.size()) - 1);
-        drawPadlock(g, modes[size_t(active)].getBounds());
+        drawPadlock(g, padlockBoundsFor("mode", modes[size_t(active)]).toFloat());
     }
 }
 void WallEditor::resized() {
@@ -746,15 +869,15 @@ void WallEditor::resized() {
     abB.setBounds(520, 18, 40, 40);
     abAToB.setBounds(568, 18, 52, 40);
     abBToA.setBounds(624, 18, 52, 40);
-    prevPreset.setBounds(684, 18, 70, 40);
-    presets.setBounds(758, 18, 210, 40);
-    nextPreset.setBounds(972, 18, 48, 40);
+    prevPreset.setBounds(684, 18, 40, 40);
+    presets.setBounds(728, 18, 248, 40);
+    nextPreset.setBounds(980, 18, 40, 40);
     libraryButton.setBounds(1024, 18, 76, 40);
     buttons["highpass_on"]->setBounds(40, 101, 104, 40);
-    sliders["highpass_hz"]->setBounds(152, 94, 202, 58);
+    sliders["highpass_hz"]->setBounds(152, 101, 202, 40);
     combos["highpass_slope"]->setBounds(368, 101, 136, 40);
     buttons["lowpass_on"]->setBounds(615, 101, 104, 40);
-    sliders["lowpass_hz"]->setBounds(727, 94, 202, 58);
+    sliders["lowpass_hz"]->setBounds(727, 101, 202, 40);
     combos["lowpass_slope"]->setBounds(940, 101, 136, 40);
     for (size_t i = 0; i < modes.size(); ++i)
         modes[i].setBounds(240 + int(i) * 132, 201, 124, 40);
@@ -787,7 +910,7 @@ void WallEditor::resized() {
     inputLevel.setBounds(40, 570, 140, 50);
     outputLevel.setBounds(948, 570, 140, 50);
     guidance.setBounds(584, 695, 512, 24);
-    monitoring.setBounds(472, 504, 308, 22);
+    monitoring.setBounds(452, 504, 344, 22);
     if (presetBrowser)
         presetBrowser->setBounds(690, 88, 406, 560);
     juce::AudioProcessorEditor::resized();
@@ -844,11 +967,16 @@ void WallEditor::drawGraph(juce::Graphics &g) {
     g.drawDashedLine({r.getX(), y(ceiling), r.getRight(), y(ceiling)}, dash, 2, 1);
     text(g, "Input", {240, 505, 60, 20}, 12, blue);
     text(g, "Output", {310, 505, 60, 20}, 12, brass);
-    text(g, "Reduction", {390, 505, 100, 20}, 12, red);
+    text(g, "Reduction", {390, 505, 62, 20}, 12, red);
     text(g, "8 seconds", {786, 505, 94, 20}, 12, muted, juce::Justification::centredRight);
 }
 void WallEditor::paint(juce::Graphics &g) {
-    g.fillAll(ink);
+    g.fillAll(juce::Colour(0xff090c0d));
+    const auto framed = content.getBounds().toFloat().transformedBy(content.getTransform());
+    if (framed.getWidth() < float(getWidth()) - .5f || framed.getHeight() < float(getHeight()) - .5f) {
+        g.setColour(juce::Colour(0xff283842));
+        g.drawRect(framed.expanded(.5f), 1.f);
+    }
 }
 void WallEditor::paintContent(juce::Graphics &g) {
     g.fillAll(ink);
@@ -870,8 +998,9 @@ void WallEditor::paintContent(juce::Graphics &g) {
     text(g, "TRUE PEAK BRICKWALL LIMITER", {82, 44, 280, 18}, 10, brass);
     box(g, {24, 89, 496, 75});
     box(g, {599, 89, 497, 75});
-    text(g, "Pre-limiter high-pass", {34, 170, 220, 18}, 11, muted);
-    text(g, "Pre-limiter low-pass", {866, 170, 220, 18}, 11, muted, juce::Justification::centredRight);
+    text(g, "Pre-limiter high-pass", {34, 170, 220, 18}, 11, muted.withMultipliedAlpha(sliders.at("highpass_hz")->getAlpha()));
+    text(g, "Pre-limiter low-pass", {866, 170, 220, 18}, 11,
+         muted.withMultipliedAlpha(sliders.at("lowpass_hz")->getAlpha()), juce::Justification::centredRight);
     box(g, {24, 255, 166, 290});
     box(g, {930, 255, 166, 290});
     // dB ticks follow each fader's own scale.
@@ -888,21 +1017,31 @@ void WallEditor::paintContent(juce::Graphics &g) {
             text(g, juce::String(value), {labelX, y - 7, 30, 14}, 10, muted, justify);
         });
     });
-    const std::array<std::tuple<const char *, juce::Rectangle<int>, float, juce::Colour, int>, 6> captions{{
+    const auto controlAlpha = [&](const char *id) {
+        if (const auto it = sliders.find(id); it != sliders.end())
+            return it->second->getAlpha();
+        if (const auto it = combos.find(id); it != combos.end())
+            return it->second->getAlpha();
+        return 1.f;
+    };
+    const std::array<std::tuple<const char *, juce::Rectangle<int>, float, juce::Colour, int>, 7> captions{{
         {"mode", {35, 204, 180, 25}, 17, brass, juce::Justification::centredLeft},
         {"threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"lufs_mode", {24, 695, 88, 24}, 12, muted, juce::Justification::centredLeft},
+        {"lufs_target", {270, 669, 180, 18}, 11, muted, juce::Justification::centredLeft},
         {"oversampling", {24, 763, 98, 20}, 12, muted, juce::Justification::centredLeft},
         {"dither", {408, 763, 50, 20}, 12, muted, juce::Justification::centredLeft}}};
     std::ranges::for_each(captions, [&](const auto &caption) {
         const auto &[id, area, size, colour, justify] = caption;
-        text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size, colour, justify);
+        text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size,
+             colour.withMultipliedAlpha(controlAlpha(id)), justify);
     });
     drawGraph(g);
     std::ranges::for_each(knobIds, [&](const char *id) {
         const auto name = wallProcessor.parameters.getParameter(id)->getName(64);
-        text(g, name, {sliders.at(id)->getX(), 537, 74, 20}, 12, paper, juce::Justification::centred);
+        text(g, name, {sliders.at(id)->getX(), 537, 74, 20}, 12,
+             paper.withMultipliedAlpha(sliders.at(id)->getAlpha()), juce::Justification::centred);
     });
     g.setColour(juce::Colour(0xff283842));
     g.drawHorizontalLine(744, 24, 1096);
@@ -910,6 +1049,6 @@ void WallEditor::paintContent(juce::Graphics &g) {
          juce::String(wallProcessor.effectiveFactor.load()) + "x active  |  "
              + wall::latencyReadout(wallProcessor.getLatencySamples(), wallProcessor.preparedSampleRate()),
          {24, 804, 620, 18}, 11, muted);
-    text(g, "Alan Marcero   /   v" JucePlugin_VersionString, {760, 804, 336, 18}, 11, muted,
+    text(g, "Alan Marcero   /   v" JucePlugin_VersionString, {740, 804, 336, 18}, 11, muted,
          juce::Justification::centredRight);
 }
