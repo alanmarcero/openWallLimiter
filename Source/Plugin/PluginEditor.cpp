@@ -91,7 +91,8 @@ void drawPadlock(juce::Graphics &g, juce::Rectangle<float> badge) {
     g.fillEllipse(cx - .8f, body.getCentreY() - .8f, 1.6f, 1.6f);
 }
 } // namespace
-Readout::Readout(const char *id, const juce::String &caption, float valueSize) : size(valueSize) {
+Readout::Readout(const char *id, const juce::String &caption, float valueSize, const char *ledLabel)
+    : ledCaption(ledLabel), size(valueSize) {
     setComponentID(id);
     setTitle(caption);
 }
@@ -104,8 +105,11 @@ void Readout::show(const juce::String &shown, juce::Colour shownColour, juce::Co
     repaint();
 }
 void Readout::paint(juce::Graphics &g) {
-    text(g, getTitle(), getLocalBounds().withHeight(20), 13.f, paper.withAlpha(.78f));
+    text(g, getTitle(), getLocalBounds().withHeight(20), 14.f, paper.withAlpha(.9f));
     text(g, value, getLocalBounds().withTrimmedTop(20), size, colour);
+    if (ledCaption.isNotEmpty())
+        text(g, ledCaption, {getWidth() - 44, 2, 38, 16}, 11.f, muted.brighter(.15f),
+             juce::Justification::centredRight);
     g.setColour(led);
     g.fillEllipse(float(getWidth()) - 14.f, 27.f, 8.f, 8.f);
 }
@@ -165,6 +169,24 @@ void WallLook::drawButtonBackground(juce::Graphics &g, juce::Button &b, const ju
         g.setColour(paper);
         g.drawRoundedRectangle(r.reduced(2), 3, 1);
     }
+}
+void WallLook::drawButtonText(juce::Graphics &g, juce::TextButton &b, bool, bool) {
+    const auto buttonFont = getTextButtonFont(b, b.getHeight());
+    g.setFont(buttonFont);
+    auto colour = b.findColour(b.getToggleState() ? juce::TextButton::textColourOnId
+                                                  : juce::TextButton::textColourOffId);
+    if (!b.isEnabled())
+        colour = muted.withAlpha(.75f);
+    g.setColour(colour);
+    const int yIndent = juce::jmin(4, b.proportionOfHeight(0.3f));
+    const int cornerSize = juce::jmin(b.getHeight(), b.getWidth()) / 2;
+    const int fontHeight = juce::roundToInt(buttonFont.getHeight() * 0.6f);
+    const int leftIndent = juce::jmin(fontHeight, 2 + cornerSize / (b.isConnectedOnLeft() ? 4 : 2));
+    const int rightIndent = juce::jmin(fontHeight, 2 + cornerSize / (b.isConnectedOnRight() ? 4 : 2));
+    const int textWidth = b.getWidth() - leftIndent - rightIndent;
+    if (textWidth > 0)
+        g.drawFittedText(b.getButtonText(), leftIndent, yIndent, textWidth, b.getHeight() - yIndent * 2,
+                         juce::Justification::centred, 2);
 }
 void WallLook::drawRotarySlider(juce::Graphics &g, int x, int y, int w, int h, float pos, float start,
                                 float end, juce::Slider &slider) {
@@ -951,7 +973,8 @@ void WallEditor::drawGraph(juce::Graphics &g) {
              juce::Justification::centredRight);
     });
     std::ranges::for_each(std::array{0, 3, 6, 12}, [&](int reduction) {
-        text(g, juce::String(reduction), {884, int(depth(float(reduction))) - 8, 28, 16}, 10, red);
+        text(g, juce::String(reduction), {885, int(depth(float(reduction))) - 8, 28, 16}, 11.5f,
+             red.interpolatedWith(paper, .22f));
     });
     for (int i = 1; i < 8; ++i) {
         g.setColour(juce::Colour(0xff20292a));
@@ -1013,7 +1036,7 @@ void WallEditor::paintContent(juce::Graphics &g) {
         ceilingMark->drawWithin(g, bounds, juce::RectanglePlacement::centred, 0.76f + 0.24f * pulse);
     }
     text(g, "openWallLimiter", {80, 14, 250, 32}, 27, paper);
-    text(g, "TRUE PEAK BRICKWALL LIMITER", {82, 44, 280, 18}, 10, brass);
+    text(g, "TRUE PEAK BRICKWALL LIMITER", {82, 45, 220, 18}, 11.5f, brass.interpolatedWith(paper, .15f));
     box(g, {24, 89, 496, 75});
     box(g, {599, 89, 497, 75});
     pillText(g, "Pre-limiter high-pass", {28, 169, 220, 20}, 12,
@@ -1021,6 +1044,8 @@ void WallEditor::paintContent(juce::Graphics &g) {
              juce::Justification::centredLeft);
     pillText(g, "Pre-limiter low-pass", {872, 169, 220, 20}, 12,
              paper.withAlpha(.85f).withMultipliedAlpha(sliders.at("lowpass_hz")->getAlpha()),
+             juce::Justification::centredRight);
+    pillText(g, wallProcessor.parameters.getParameter("mode")->getName(64), {150, 208, 78, 26}, 16.f, brass,
              juce::Justification::centredRight);
     box(g, {24, 255, 166, 290});
     box(g, {930, 255, 166, 290});
@@ -1045,18 +1070,18 @@ void WallEditor::paintContent(juce::Graphics &g) {
             return it->second->getAlpha();
         return 1.f;
     };
-    const std::array<std::tuple<const char *, juce::Rectangle<int>, float, juce::Colour, int>, 7> captions{{
-        {"mode", {35, 204, 180, 25}, 17, brass, juce::Justification::centredLeft},
+    const std::array<std::tuple<const char *, juce::Rectangle<int>, float, juce::Colour, int>, 6> captions{{
         {"threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"lufs_mode", {24, 695, 88, 24}, 12, muted, juce::Justification::centredLeft},
-        {"lufs_target", {256, 669, 204, 18}, 12, paper.withAlpha(.85f), juce::Justification::centredLeft},
-        {"oversampling", {24, 763, 98, 20}, 12, muted, juce::Justification::centredLeft},
-        {"dither", {408, 763, 50, 20}, 12, muted, juce::Justification::centredLeft}}};
+        {"lufs_target", {256, 667, 204, 20}, 13.f, paper, juce::Justification::centredLeft},
+        {"oversampling", {24, 764, 94, 24}, 13.f, paper.withAlpha(.84f), juce::Justification::centredLeft},
+        {"dither", {402, 764, 52, 24}, 13.f, paper.withAlpha(.84f), juce::Justification::centredLeft}}};
     std::ranges::for_each(captions, [&](const auto &caption) {
         const auto &[id, area, size, colour, justify] = caption;
+        const float alpha = std::max(controlAlpha(id), .58f);
         text(g, wallProcessor.parameters.getParameter(id)->getName(64), area, size,
-             colour.withMultipliedAlpha(controlAlpha(id)), justify);
+             colour.withMultipliedAlpha(alpha), justify);
     });
     drawGraph(g);
     std::ranges::for_each(knobIds, [&](const char *id) {
@@ -1070,6 +1095,6 @@ void WallEditor::paintContent(juce::Graphics &g) {
          juce::String(wallProcessor.effectiveFactor.load()) + "x active  |  "
              + wall::latencyReadout(wallProcessor.getLatencySamples(), wallProcessor.preparedSampleRate()),
          {24, 801, 620, 20}, 12.5f, paper.withAlpha(.78f));
-    text(g, "Alan Marcero   /   v" JucePlugin_VersionString, {740, 801, 356, 20}, 12.5f, paper.withAlpha(.78f),
+    text(g, "Alan Marcero / v" JucePlugin_VersionString, {740, 801, 356, 20}, 12.5f, paper.withAlpha(.78f),
          juce::Justification::centredRight);
 }

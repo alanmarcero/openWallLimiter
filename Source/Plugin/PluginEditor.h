@@ -14,12 +14,13 @@ class WallLook final : public juce::LookAndFeel_V4 {
     void drawLinearSlider(juce::Graphics &, int, int, int, int, float, float, float,
                           juce::Slider::SliderStyle, juce::Slider &) override;
     void drawButtonBackground(juce::Graphics &, juce::Button &, const juce::Colour &, bool, bool) override;
+    void drawButtonText(juce::Graphics &, juce::TextButton &, bool, bool) override;
     void drawComboBox(juce::Graphics &, int, int, bool, int, int, int, int, juce::ComboBox &) override;
 };
 // A meter reading as a component, so screen readers can find it. A click runs onClick when it is set.
 class Readout final : public juce::Component, public juce::SettableTooltipClient {
   public:
-    Readout(const char *id, const juce::String &caption, float valueSize);
+    Readout(const char *id, const juce::String &caption, float valueSize, const char *ledLabel = "");
     std::function<void()> onClick;
     void show(const juce::String &shown, juce::Colour shownColour, juce::Colour shownLed = {});
     void paint(juce::Graphics &) override;
@@ -28,7 +29,7 @@ class Readout final : public juce::Component, public juce::SettableTooltipClient
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
   private:
-    juce::String value;
+    juce::String value, ledCaption;
     juce::Colour colour, led;
     float size;
 };
@@ -160,8 +161,8 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     juce::TextButton abA{"A"}, abB{"B"}, abAToB{"A>B"}, abBToA{"B>A"};
     juce::TextButton libraryButton{"Library"}, matchLoudness{"Drive to target"};
     Readout gainReduction{"gain_reduction", "Gain reduction", 22}, shortTerm{"short_term", "Short-term", 22},
-        integrated{"integrated", "Integrated", 22}, truePeak{"true_peak_reading", "True peak max", 22},
-        inputLevel{"input_level", "Input", 23}, outputLevel{"output_level", "Output", 23};
+        integrated{"integrated", "Integrated", 22}, truePeak{"true_peak_reading", "True peak max", 22, "Peak"},
+        inputLevel{"input_level", "Input", 23, "Clip"}, outputLevel{"output_level", "Output", 23, "Clip"};
     juce::Label guidance, monitoring;
     std::unique_ptr<suite::PresetLibrary> presetLibrary;
     std::unique_ptr<suite::PresetBrowser> presetBrowser;

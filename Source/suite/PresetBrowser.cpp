@@ -226,7 +226,7 @@ void PresetBrowser::paintListBoxItem(int row, juce::Graphics &g, int width, int 
     const juce::String mark = entry.favorite ? juce::String::fromUTF8("★ ") : juce::String::fromUTF8("☆ ");
     g.drawText(mark + entry.name, 8, 0, width - 78, height, juce::Justification::centredLeft, true);
     g.setColour(isSelected ? ink : muted);
-    g.setFont(juce::Font(juce::FontOptions(11.f)));
+    g.setFont(juce::Font(juce::FontOptions(12.f)));
     g.drawText(entry.factory ? "Factory" : "User", width - 70, 0, 62, height, juce::Justification::centredRight);
 }
 void PresetBrowser::paint(juce::Graphics &g) {
