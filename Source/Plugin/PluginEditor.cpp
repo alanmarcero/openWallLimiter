@@ -20,6 +20,16 @@ void text(juce::Graphics &g, const juce::String &s, juce::Rectangle<int> r, floa
     g.setFont(font(size));
     g.drawText(s, r, justify);
 }
+void pillText(juce::Graphics &g, const juce::String &s, juce::Rectangle<int> r, float size,
+              juce::Colour color, int justify) {
+    const float textWidth = juce::GlyphArrangement::getStringWidth(font(size), s);
+    const int pillW = std::min(r.getWidth(), juce::roundToInt(textWidth) + 16);
+    const int pillX = (justify & juce::Justification::right) != 0 ? r.getRight() - pillW : r.getX();
+    const juce::Rectangle<float> pill(float(pillX), float(r.getY()), float(pillW), float(r.getHeight()));
+    g.setColour(ink.withAlpha(.78f));
+    g.fillRoundedRectangle(pill, 4.f);
+    text(g, s, pill.toNearestInt(), size, color, juce::Justification::centred);
+}
 // Matches the style table in README.md.
 constexpr std::array<const char *, 5> modeCharacters{
     "Balanced, with fast recovery for transients.", "Transparent, with a slower attack and rounded recovery.",
@@ -94,8 +104,8 @@ void Readout::show(const juce::String &shown, juce::Colour shownColour, juce::Co
     repaint();
 }
 void Readout::paint(juce::Graphics &g) {
-    text(g, getTitle(), getLocalBounds().withHeight(19), 12, muted);
-    text(g, value, getLocalBounds().withTrimmedTop(21), size, colour);
+    text(g, getTitle(), getLocalBounds().withHeight(20), 13.f, paper.withAlpha(.78f));
+    text(g, value, getLocalBounds().withTrimmedTop(20), size, colour);
     g.setColour(led);
     g.fillEllipse(float(getWidth()) - 14.f, 27.f, 8.f, 8.f);
 }
@@ -125,6 +135,7 @@ WallLook::WallLook() {
     setColour(juce::Slider::textBoxTextColourId, paper);
     setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
     setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::Label::outlineWhenEditingColourId, juce::Colour(0xff3c525f));
     setColour(juce::ComboBox::backgroundColourId, panel);
     setColour(juce::ComboBox::textColourId, paper);
     setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff283842));
@@ -486,6 +497,9 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     };
     presetBrowser->onClose = [this] { libraryButton.setToggleState(false, juce::sendNotificationSync); };
     presetBrowser->capture = [this] { return wallProcessor.captureParameters(); };
+    backdrop.setComponentID("preset_backdrop");
+    backdrop.onDismiss = [this] { libraryButton.setToggleState(false, juce::sendNotificationSync); };
+    content.addChildComponent(backdrop);
     content.addChildComponent(*presetBrowser);
     const std::array readouts{&gainReduction, &shortTerm, &integrated, &truePeak, &inputLevel, &outputLevel};
     std::ranges::for_each(readouts, [this](Readout *readout) { content.addAndMakeVisible(readout); });
@@ -511,13 +525,16 @@ WallEditor::WallEditor(WallProcessor &p) : AudioProcessorEditor(p), wallProcesso
     monitoring.setJustificationType(juce::Justification::centred);
     content.addChildComponent(monitoring);
     guidance.setComponentID("loudness_guidance");
-    guidance.setFont(font(12));
+    guidance.setFont(font(13));
     guidance.setColour(juce::Label::textColourId, paper);
     guidance.setBorderSize({});
     content.addAndMakeVisible(guidance);
     libraryButton.onClick = [this] {
-        presetBrowser->setVisible(libraryButton.getToggleState());
-        if (presetBrowser->isVisible()) {
+        const bool open = libraryButton.getToggleState();
+        backdrop.setVisible(open);
+        presetBrowser->setVisible(open);
+        if (open) {
+            backdrop.toFront(false);
             presetBrowser->refresh();
             presetBrowser->toFront(false);
         }
@@ -722,7 +739,7 @@ void WallEditor::timerCallback() {
     const auto label = wallProcessor.presetLabel();
     if (!presets.isPopupActive() && presets.getText() != label)
         presets.setText(label, juce::dontSendNotification);
-    content.repaint(240, 323, 640, 173);
+    content.repaint(240, 323, 640, 162);
     const float phase = wallProcessor.artworkPhase();
     if (std::abs(phase - lastArtworkPhase) > 1e-4f) {
         lastArtworkPhase = phase;
@@ -832,7 +849,7 @@ void WallEditor::showLockMenu(const juce::String &paramID, juce::Component &targ
 }
 void WallEditor::paintLockIndicators(juce::Graphics &g) {
     if (presetBrowser && presetBrowser->isVisible())
-        g.excludeClipRegion(presetBrowser->getBounds());
+        return;
     const auto drawIfLocked = [&](const juce::String &id, const juce::Component &control) {
         if (control.isVisible() && wallProcessor.isParamLocked(id))
             drawPadlock(g, padlockBoundsFor(id, control).toFloat());
@@ -863,16 +880,16 @@ void WallEditor::resized() {
     content.setTransform(juce::AffineTransform::scale(scale).translated(
         (float(width) - float(WallProcessor::defaultEditorWidth) * scale) * .5f,
         (float(height) - float(WallProcessor::defaultEditorHeight) * scale) * .5f));
-    undoButton.setBounds(336, 18, 64, 40);
-    redoButton.setBounds(404, 18, 64, 40);
-    abA.setBounds(476, 18, 40, 40);
-    abB.setBounds(520, 18, 40, 40);
-    abAToB.setBounds(568, 18, 52, 40);
-    abBToA.setBounds(624, 18, 52, 40);
-    prevPreset.setBounds(684, 18, 40, 40);
-    presets.setBounds(728, 18, 248, 40);
-    nextPreset.setBounds(980, 18, 40, 40);
-    libraryButton.setBounds(1024, 18, 76, 40);
+    undoButton.setBounds(308, 18, 64, 40);
+    redoButton.setBounds(376, 18, 64, 40);
+    abA.setBounds(448, 18, 40, 40);
+    abB.setBounds(492, 18, 40, 40);
+    abAToB.setBounds(540, 18, 50, 40);
+    abBToA.setBounds(594, 18, 50, 40);
+    prevPreset.setBounds(652, 18, 40, 40);
+    presets.setBounds(696, 18, 284, 40);
+    nextPreset.setBounds(984, 18, 40, 40);
+    libraryButton.setBounds(1028, 18, 72, 40);
     buttons["highpass_on"]->setBounds(40, 101, 104, 40);
     sliders["highpass_hz"]->setBounds(152, 101, 202, 40);
     combos["highpass_slope"]->setBounds(368, 101, 136, 40);
@@ -893,9 +910,9 @@ void WallEditor::resized() {
     sliders["input_gain"]->setBounds(674, 560, 74, 96);
     sliders["stereo_width"]->setBounds(750, 560, 74, 96);
     sliders["tone_tilt"]->setBounds(826, 560, 74, 96);
-    combos["lufs_mode"]->setBounds(112, 688, 150, 40);
-    sliders["lufs_target"]->setBounds(270, 688, 180, 40);
-    matchLoudness.setBounds(458, 688, 116, 40);
+    combos["lufs_mode"]->setBounds(112, 688, 136, 40);
+    sliders["lufs_target"]->setBounds(256, 688, 204, 40);
+    matchLoudness.setBounds(468, 688, 122, 40);
     combos["oversampling"]->setBounds(122, 756, 150, 40);
     buttons["true_peak"]->setBounds(284, 756, 104, 40);
     combos["dither"]->setBounds(458, 756, 138, 40);
@@ -909,14 +926,15 @@ void WallEditor::resized() {
     truePeak.setBounds(744, 265, 164, 49);
     inputLevel.setBounds(40, 570, 140, 50);
     outputLevel.setBounds(948, 570, 140, 50);
-    guidance.setBounds(584, 695, 512, 24);
-    monitoring.setBounds(452, 504, 344, 22);
+    guidance.setBounds(598, 695, 498, 24);
+    monitoring.setBounds(360, 510, 400, 21);
+    backdrop.setBounds(content.getLocalBounds());
     if (presetBrowser)
         presetBrowser->setBounds(690, 88, 406, 560);
     juce::AudioProcessorEditor::resized();
 }
 void WallEditor::drawGraph(juce::Graphics &g) {
-    juce::Rectangle<float> r{240, 323, 640, 173};
+    juce::Rectangle<float> r{240, 323, 640, 162};
     g.setColour(juce::Colour(0xff0d1214));
     g.fillRoundedRectangle(r, 4);
     // Levels span -24 dBFS at the bottom to 0 dBFS at the top.
@@ -965,10 +983,10 @@ void WallEditor::drawGraph(juce::Graphics &g) {
     g.setColour(brass.withAlpha(.3f));
     const float dash[]{4, 4};
     g.drawDashedLine({r.getX(), y(ceiling), r.getRight(), y(ceiling)}, dash, 2, 1);
-    text(g, "Input", {240, 505, 60, 20}, 12, blue);
-    text(g, "Output", {310, 505, 60, 20}, 12, brass);
-    text(g, "Reduction", {390, 505, 62, 20}, 12, red);
-    text(g, "8 seconds", {786, 505, 94, 20}, 12, muted, juce::Justification::centredRight);
+    text(g, "Input", {240, 489, 60, 18}, 13, blue);
+    text(g, "Output", {310, 489, 64, 18}, 13, brass);
+    text(g, "Reduction", {390, 489, 76, 18}, 13, red);
+    text(g, "8 seconds", {776, 489, 104, 18}, 13, paper.withAlpha(.82f), juce::Justification::centredRight);
 }
 void WallEditor::paint(juce::Graphics &g) {
     g.fillAll(juce::Colour(0xff090c0d));
@@ -998,23 +1016,26 @@ void WallEditor::paintContent(juce::Graphics &g) {
     text(g, "TRUE PEAK BRICKWALL LIMITER", {82, 44, 280, 18}, 10, brass);
     box(g, {24, 89, 496, 75});
     box(g, {599, 89, 497, 75});
-    text(g, "Pre-limiter high-pass", {34, 170, 220, 18}, 11, muted.withMultipliedAlpha(sliders.at("highpass_hz")->getAlpha()));
-    text(g, "Pre-limiter low-pass", {866, 170, 220, 18}, 11,
-         muted.withMultipliedAlpha(sliders.at("lowpass_hz")->getAlpha()), juce::Justification::centredRight);
+    pillText(g, "Pre-limiter high-pass", {28, 169, 220, 20}, 12,
+             paper.withAlpha(.85f).withMultipliedAlpha(sliders.at("highpass_hz")->getAlpha()),
+             juce::Justification::centredLeft);
+    pillText(g, "Pre-limiter low-pass", {872, 169, 220, 20}, 12,
+             paper.withAlpha(.85f).withMultipliedAlpha(sliders.at("lowpass_hz")->getAlpha()),
+             juce::Justification::centredRight);
     box(g, {24, 255, 166, 290});
     box(g, {930, 255, 166, 290});
     // dB ticks follow each fader's own scale.
     const std::array<std::tuple<const char *, std::array<int, 6>, int, int, int>, 2> faderTicks{{
-        {"threshold", {0, -6, -12, -18, -24, -30}, 82, 50, juce::Justification::centredRight},
+        {"threshold", {0, -6, -12, -18, -24, -30}, 82, 48, juce::Justification::centredRight},
         {"ceiling", {0, -1, -2, -3, -6, -30}, 1040, 1050, juce::Justification::centredLeft}}};
     std::ranges::for_each(faderTicks, [&](const auto &fader) {
         const auto &[id, values, tickX, labelX, justify] = fader;
         const auto &slider = *sliders.at(id);
         std::ranges::for_each(values, [&](int value) {
             const int y = slider.getY() + juce::roundToInt(slider.getPositionOfValue(value));
-            g.setColour(muted);
+            g.setColour(muted.brighter(.2f));
             g.drawHorizontalLine(y, float(tickX), float(tickX + 6));
-            text(g, juce::String(value), {labelX, y - 7, 30, 14}, 10, muted, justify);
+            text(g, juce::String(value), {labelX, y - 8, 32, 16}, 11.5f, paper.withAlpha(.82f), justify);
         });
     });
     const auto controlAlpha = [&](const char *id) {
@@ -1029,7 +1050,7 @@ void WallEditor::paintContent(juce::Graphics &g) {
         {"threshold", {40, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"ceiling", {946, 270, 134, 25}, 17, paper, juce::Justification::centred},
         {"lufs_mode", {24, 695, 88, 24}, 12, muted, juce::Justification::centredLeft},
-        {"lufs_target", {270, 669, 180, 18}, 11, muted, juce::Justification::centredLeft},
+        {"lufs_target", {256, 669, 204, 18}, 12, paper.withAlpha(.85f), juce::Justification::centredLeft},
         {"oversampling", {24, 763, 98, 20}, 12, muted, juce::Justification::centredLeft},
         {"dither", {408, 763, 50, 20}, 12, muted, juce::Justification::centredLeft}}};
     std::ranges::for_each(captions, [&](const auto &caption) {
@@ -1048,7 +1069,7 @@ void WallEditor::paintContent(juce::Graphics &g) {
     text(g,
          juce::String(wallProcessor.effectiveFactor.load()) + "x active  |  "
              + wall::latencyReadout(wallProcessor.getLatencySamples(), wallProcessor.preparedSampleRate()),
-         {24, 804, 620, 18}, 11, muted);
-    text(g, "Alan Marcero   /   v" JucePlugin_VersionString, {740, 804, 336, 18}, 11, muted,
+         {24, 801, 620, 20}, 12.5f, paper.withAlpha(.78f));
+    text(g, "Alan Marcero   /   v" JucePlugin_VersionString, {740, 801, 356, 20}, 12.5f, paper.withAlpha(.78f),
          juce::Justification::centredRight);
 }

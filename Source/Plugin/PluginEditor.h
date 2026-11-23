@@ -124,6 +124,14 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
                 onBadgeClick(e);
         }
     };
+    struct Backdrop final : juce::Component {
+        std::function<void()> onDismiss;
+        void paint(juce::Graphics &g) override { g.fillAll(juce::Colour(0xff0d1317).withAlpha(.68f)); }
+        void mouseUp(const juce::MouseEvent &e) override {
+            if (onDismiss && contains(e.getPosition()))
+                onDismiss();
+        }
+    };
     // Holds every control at the design size. resized() scales it.
     struct Content final : juce::Component {
         explicit Content(WallEditor &owner) : editor(owner) {}
@@ -134,6 +142,7 @@ class WallEditor final : public juce::AudioProcessorEditor, public juce::Timer {
     WallProcessor &wallProcessor;
     WallLook look;
     Content content{*this};
+    Backdrop backdrop;
     juce::Image fortress;
     std::unique_ptr<juce::Drawable> ceilingMark;
     std::map<juce::String, std::unique_ptr<juce::Slider>> sliders;
