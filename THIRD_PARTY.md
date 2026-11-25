@@ -1,6 +1,6 @@
 # Third-party credits
 
-- JUCE 8.0.9, Raw Material Software Limited: AGPL-3.0 or a commercial license. Source: https://github.com/juce-framework/JUCE/tree/8.0.9. Release packages include JUCE's own license notices. JUCE is not covered by this project's MIT license.
+- JUCE 8.0.9, Raw Material Software Limited: AGPL-3.0 or a commercial license. Source: https://github.com/juce-framework/JUCE/tree/8.0.9. Release packages include JUCE's own license notices. This repository uses the AGPL-3.0 option (see LICENSE).
 - High/low-pass Butterworth filters and K-weighted loudness meter adapted from Alan Marcero's openMaster, MIT licensed. Original license: `third_party/openMaster-LICENSE.txt`. Source: https://github.com/alanmarcero/openMaster. Filters remain under their original MIT terms.
 - Limiter implementation is original code informed by public DSP descriptions linked in `docs/ALGORITHMS.md`.
 - Waves L4 is a functional workflow reference. No Waves source, artwork, presets or branding are included. This is an independent plugin; it does not reproduce proprietary L4 or L2 algorithms.

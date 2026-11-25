@@ -21,7 +21,7 @@ jobs:
     name: DSP / sanitizers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_ref }}
       - name: Configure
@@ -36,7 +36,7 @@ jobs:
     env:
       ARTEFACTS: build/openWallLimiter_artefacts/Release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_ref }}
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
@@ -49,6 +49,7 @@ jobs:
       - name: Validate VST3
         run: |
           curl --fail --location --silent --show-error -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          echo "3c4c533bda0c5059eea3ddaea752d757ee2025041f0f47e6bcb0e87f6082b29f  pluginval.zip" | shasum -a 256 -c -
           unzip -q pluginval.zip
           ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate "$ARTEFACTS/VST3/openWallLimiter.vst3"
       - name: Validate Audio Unit
@@ -61,11 +62,11 @@ jobs:
           export GITHUB_SHA="$(git rev-parse HEAD)"
           python3 scripts/package_notices.py package
           ditto -c -k --keepParent package openWallLimiter-macOS-universal.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: openWallLimiter-macOS-universal
           path: openWallLimiter-macOS-universal.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: screenshots-macOS
           path: build/screenshots/*.png
@@ -76,7 +77,7 @@ jobs:
     env:
       ARTEFACTS: build/openWallLimiter_artefacts/Release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_ref }}
       - run: cmake -S . -B build -A x64
@@ -85,6 +86,8 @@ jobs:
       - name: Validate VST3
         run: |
           Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip -OutFile pluginval.zip
+          $hash = (Get-FileHash pluginval.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne "c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab") { throw "pluginval.zip SHA-256 mismatch: $hash" }
           Expand-Archive pluginval.zip -DestinationPath pluginval
           ./pluginval/pluginval.exe --strictness-level 5 --validate "$env:ARTEFACTS/VST3/openWallLimiter.vst3"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -96,16 +99,16 @@ jobs:
           python scripts/package_notices.py package
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Compress-Archive -Path package -DestinationPath openWallLimiter-Windows-x64.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: openWallLimiter-Windows-x64
           path: openWallLimiter-Windows-x64.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: screenshots-Windows
           path: build/screenshots/*.png
       - name: Upload preview screenshot
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: preview-screenshot
           path: build/screenshots/openWallLimiter.png
@@ -126,10 +129,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: preview-screenshot
           path: preview
