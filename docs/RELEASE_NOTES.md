@@ -1,3 +1,8 @@
+# openWallLimiter 1.10.3
+
+- **Editor polish:** Improves controls, preset browsing, accessibility, and the shared suite layout.
+- **Build and licensing:** Aligns JUCE 8 licensing and hardens the CI workflow.
+
 # openWallLimiter 1.10.0
 
 Upgrades the limiter core, pre-limiter filtering, true-peak protection, and output dither:
