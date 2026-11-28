@@ -632,7 +632,8 @@ void WallEditor::timerCallback() {
     inputClipped = inputClipped || inputHistory[now] > 0.f;
     outputClipped = outputClipped || outputHistory[now] > 0.f;
     cursor = (cursor + 1) % int(inputHistory.size());
-    const int active = int(wallProcessor.parameters.getRawParameterValue("mode")->load());
+    const int active = std::clamp(int(std::lround(wallProcessor.parameters.getRawParameterValue("mode")->load())),
+                                  0, int(wall::modeProfiles.size()) - 1);
     for (size_t i = 0; i < modes.size(); ++i)
         modes[i].setToggleState(int(i) == active, juce::dontSendNotification);
 

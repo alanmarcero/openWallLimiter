@@ -637,9 +637,21 @@ void WallProcessor::setStateInformation(const void *data, int size) {
         abCompare.setSlot(slot, captureParameters());
     }
     parameterUndo.setUndoManager(undoManagers[size_t(abCompare.active())]);
-    if (auto *editor = getActiveEditor())
-        if (editor->getWidth() != editorWidth || editor->getHeight() != editorHeight)
-            editor->setSize(editorWidth, editorHeight);
+    if (auto *editor = getActiveEditor()) {
+        const int width = editorWidth;
+        const int height = editorHeight;
+        if (auto *mm = juce::MessageManager::getInstanceWithoutCreating();
+            mm != nullptr && mm->isThisTheMessageThread()) {
+            if (editor->getWidth() != width || editor->getHeight() != height)
+                editor->setSize(width, height);
+        } else {
+            juce::Component::SafePointer<juce::AudioProcessorEditor> safeEditor(editor);
+            juce::MessageManager::callAsync([safeEditor, width, height]() mutable {
+                if (safeEditor != nullptr && (safeEditor->getWidth() != width || safeEditor->getHeight() != height))
+                    safeEditor->setSize(width, height);
+            });
+        }
+    }
 }
 const std::vector<WallPreset> &WallProcessor::factoryPresets() {
     static const std::vector<WallPreset> list{

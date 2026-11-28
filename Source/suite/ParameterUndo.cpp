@@ -67,17 +67,23 @@ void ParameterUndo::performTree(juce::AudioProcessorValueTreeState &state, const
     undo->perform(new ParameterTreeAction(*this, state, state.copyState().createCopy(), next.createCopy()));
 }
 void ParameterUndo::parameterGestureChanged(int, bool starting) {
+    if (auto *mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr && !mm->isThisTheMessageThread())
+        return;
     if (suspendCount > 0)
         return;
     if (starting) {
-        if (openGestures == 0 && groupDepth == 0)
+        if (openGestures == 0 && groupDepth == 0) {
+            rescan();
             undo->beginNewTransaction();
+        }
         ++openGestures;
     } else if (openGestures > 0) {
         --openGestures;
     }
 }
 void ParameterUndo::parameterValueChanged(int index, float newValue) {
+    if (auto *mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr && !mm->isThisTheMessageThread())
+        return;
     if (index < 0 || index >= int(parameters.size()))
         return;
     if (suspendCount > 0) {
