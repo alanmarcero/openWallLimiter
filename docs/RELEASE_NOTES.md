@@ -1,3 +1,7 @@
+# openWallLimiter 1.10.4
+
+- **Thread safety:** Guards parameter undo mutations to the message thread, defers off-thread editor resizing during state recall, and clamps limiter mode indices.
+
 # openWallLimiter 1.10.3
 
 - **Editor polish:** Improves controls, preset browsing, accessibility, and the shared suite layout.
